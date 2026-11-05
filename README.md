@@ -6,7 +6,7 @@ A single-page app for thinking a project through as a mind map and then running 
 
 It is a companion to [Issue Tree Studio](https://github.com/tobycross/issue-tree-studio), [WBS Studio](https://github.com/tobycross/wbs-studio) and [AHP Studio](https://github.com/tobycross/ahp-studio), and shares their look, controls and file approach. The full functional specification is in [`SPEC.md`](SPEC.md).
 
-The whole app is one self-contained HTML file: [`mindmap-studio.html`](mindmap-studio.html).
+The whole app is one self-contained HTML file: [`mindmap-studio.html`](mindmap-studio.html). Changes between versions are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Features
 

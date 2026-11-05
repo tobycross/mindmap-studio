@@ -87,7 +87,8 @@ A new map is a blank canvas with one box in the middle, the **centre topic**, sh
 - **Both sides.** Main branches (the children of the centre topic) sit on the right and left of the centre. Everything below a main branch grows outwards on that branch's side.
 - **Automatic balance.** By default the first half of the main branches (rounded up) goes on the right, top to bottom, and the rest on the left, bottom to top, so the map reads clockwise from the top right. Adding or removing a main branch rebalances the automatic ones.
 - **Choosing a side.** Dragging a main branch across the centre, or pressing Alt+← / Alt+→ on it, fixes it to that side. A fixed side is saved. "Automatic side" in the right-click menu of a main branch puts it back under automatic balance.
-- **Spacing.** Sub-branches are laid out as a tidy tree on their side, with no overlaps. Positions are worked out from the structure every time it is drawn; there is no free placement.
+- **Spacing.** Sub-branches are laid out as a tidy tree on their side, with no overlaps. Positions are worked out from the structure every time it is drawn.
+- **Free placement and Tidy** *(1.1)*. A node dragged to empty canvas stays exactly where it is dropped, and its sub-branches travel with it. It keeps an offset from its tidy position, so new children still appear in order beside it and lines leave from whichever side faces them. **Tidy** (beside Fit at the bottom right, and in the centre topic's right-click menu) clears every offset and brings the whole map back into its tidy structure, as one undo step. A node moved to a new place in the structure (dropped on another node) joins it tidily.
 - **Motion.** Nodes glide to their new place when the map reflows (as cards do in Issue Tree Studio).
 
 ### 3.3 Nodes
@@ -102,9 +103,10 @@ A new map is a blank canvas with one box in the middle, the **centre topic**, sh
 
 All of this is as in Issue Tree Studio unless stated:
 - Click a node to select it. Click again, or press Enter on a selected node, to edit its text. Escape stops editing.
+- **Typing replaces** *(1.1)*. Editing starts with the node's whole text selected, so typing replaces it; an arrow key or a click places the cursor instead. Typing any character on a selected node starts editing with that character. Cards on the Board work the same way when double-clicked.
 - **Node toolbar.** A small toolbar appears above the selected node: **+ Child**, **+ Sibling**, **Task**, **Tag**, **Fold**, **Delete**. On the centre topic it shows **+ Branch** only. Task shows **Details** instead once the node is a task (section 5.4).
 - **Add button.** A round "+" appears beside a node on hover, on its outer side, and adds a child.
-- **Drag.** Drag a node to reorder it among its siblings, to give it a new parent, or (for a main branch) to move it to the other side. Its sub-branches travel with it. A ghost card follows the pointer and the drop markers of Issue Tree Studio's Outline show where it will land: a bar above or below a node places it before or after, a dashed box makes it a child. A main branch dropped on empty canvas moves to that side of the centre. Escape cancels. Every drop is one undo step.
+- **Drag.** Drag a node to reorder it among its siblings, to give it a new parent, or (for a main branch) to move it to the other side. Its sub-branches travel with it. A ghost card follows the pointer and the drop markers of Issue Tree Studio's Outline show where it will land: a bar above or below a node places it before or after, a dashed box makes it a child. Dropped on empty canvas, a node stays where it is dropped (see Free placement in 3.2); a main branch dropped across the centre also changes side. Escape cancels. Every drop is one undo step.
 - **Fold.** Folding a node hides everything below it. A dashed pill beside it shows how many nodes are hidden, for example "+5", and "+5 · 2 tasks" when tasks are among them. Clicking the pill unfolds it.
 - **Pan and zoom.** Drag on empty canvas to pan, pinch or ⌘ + scroll to zoom. The zoom controls at the bottom right are −, Fit and +, as in the other Studios.
 
@@ -365,7 +367,7 @@ We chose JSON over Markdown for saving because a map holds a lot that isn't text
 - **`side`** (`"auto"`, `"left"` or `"right"`) and **`colour`** (a palette name, or `"auto"`) appear on main branches only.
 - **`task`** is present only on tasks. `status` is `"todo"`, `"doing"` or `"done"`. `due` is an ISO date, or it is left out.
 - **`tags`** on a node lists tag IDs from the library. Unknown IDs are dropped on open.
-- **`collapsed`** may appear on any node. Missing optional fields take their defaults.
+- **`collapsed`** may appear on any node, and **`offset`** (`[dx, dy]`, from 1.1) on any node placed freely. Missing optional fields take their defaults.
 - **Unknown fields** are kept when a file is opened and saved again, so a newer file opened in an older app loses nothing.
 - **A newer format** (a higher `format` number) opens with a notice: "This file was saved by a newer Mindmap Studio. Some details may not show."
 
@@ -454,7 +456,7 @@ When a node is selected but not being edited, the arrow keys move around the map
 - **↑ / ↓** go to the sibling above or below.
 - **From the centre topic:** → goes to the first right-hand branch and ← to the first left-hand branch.
 
-Enter edits the selected node, as in Issue Tree Studio.
+Enter edits the selected node, as in Issue Tree Studio, with its text selected. Typing any character on a selected node starts editing and replaces the text.
 
 ### 15.2 New in Mindmap Studio
 
@@ -494,7 +496,7 @@ These are deliberately left out to keep version 1 lean. The order is a rough gui
 2. A cross-project "All tasks" view.
 3. Notes on nodes.
 4. Priority and effort fields.
-5. Links between branches, free-floating topics, and free placement of nodes.
+5. Links between branches and free-floating topics.
 6. Dependencies, Gantt and timeline views.
 7. Recurring tasks, reminders and notifications.
 8. Images, icons and emoji on nodes.

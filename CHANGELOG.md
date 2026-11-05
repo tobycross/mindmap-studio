@@ -12,6 +12,17 @@ When making a release:
 3. Add an entry here.
 4. Tag the commit.
 
+## 1.1 (5 November 2026)
+
+- **Typing replaces.** Editing a node starts with its whole text selected, so typing replaces it. An arrow key or a click places the cursor instead. Typing any character on a selected node starts editing straight away. Board cards behave the same when double-clicked.
+- **Drag anywhere.** A node dropped on empty canvas stays where it lands, and its sub-branches travel with it.
+  - Lines leave from whichever side faces the child.
+  - New children still appear in order beside a moved node.
+  - Positions are saved as an `offset` on each moved node (file format 1, new optional field).
+- **Tidy.** A new button beside Fit (also in the centre topic's right-click menu) brings every node back into its tidy structure, as one undo step.
+- **Fix:** a drag measured its grab point from the first move rather than the press, so drops could land a little off.
+- **Tests:** four new tests (38 in all).
+
 ## 1.0 (5 November 2026)
 
 First release, built to the agreed [specification](SPEC.md).

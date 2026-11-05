@@ -407,6 +407,7 @@ body.no-anim *{transition:none!important}
       <div id="world" class="world"><svg id="wires" class="wires" xmlns="http://www.w3.org/2000/svg"></svg></div>
       <div class="zoom">
         <button id="zOut" class="btn icon" aria-label="Zoom out">−</button>
+        <button id="zTidy" class="btn" title="Put every node back in a tidy structure">Tidy</button>
         <button id="zFit" class="btn">Fit</button>
         <button id="zIn" class="btn icon" aria-label="Zoom in">+</button>
       </div>
@@ -479,7 +480,7 @@ const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 // The app's version, shown after its name and on exported pages: raise the minor number for new
 // features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 const FORMAT = 1;
 const TEST = /[?&]test\b/.test(location.search);   // ?test is used by tests/run.html and keeps its data apart
 const LS = TEST ? "mindmap-studio.test" : "mindmap-studio.v1", LS_F = LS + ".filters";
@@ -564,6 +565,7 @@ function normalise(m) {
     }
     if (d === 0) delete n.task;
     if (d !== 1) { delete n.side; delete n.colour; }
+    if (!(Array.isArray(n.offset) && n.offset.length === 2 && n.offset.every(Number.isFinite)) || d === 0) delete n.offset;
     n.children.forEach(c => fix(c, d + 1));
   })(m.root, 0);
   fixMains(m);
@@ -685,6 +687,7 @@ const ops = {
     from.splice(i, 1);
     if (from === to.children && at > i) at--;
     to.children.splice(Math.max(0, Math.min(at, to.children.length)), 0, f.n);
+    delete f.n.offset;   // a node given a new place in the structure joins it tidily
     if (to !== M.root) { delete f.n.side; delete f.n.colour; }
     else if (f.p !== M.root) { f.n.side = "auto"; f.n.colour = nextColour(to.children.filter(x => x !== f.n)); }
     if (to.collapsed) to.collapsed = false;
@@ -710,6 +713,7 @@ const ops = {
     const a = f.p.children, x = a.indexOf(f.n), y = a.indexOf(other); [a[x], a[y]] = [a[y], a[x]];
     touchModel(); return id;
   },
+  tidy() { let n = 0; walk(M.root, x => { if (x.offset) { delete x.offset; n++; } }); touchModel(); return n; },
   setSide(id, side) { const f = find(id); if (f?.p === M.root) { f.n.side = side; touchModel(); } return id; },
 };
 // Task details kept for this session when a task is turned back into a plain node, so it can come back.
@@ -808,7 +812,7 @@ function toast(msg, action) {
 /* ---------------- sketch: nodes ---------------- */
 const stage = $("#stage"), world = $("#world"), svg = $("#wires");
 const els = new Map();   // node id → element, reused between renders so editing keeps its focus
-let pos = {}, bounds = { w: 0, h: 0 }, vp = { x: 0, y: 0, k: 1 }, fitted = null;
+let pos = {}, base = {}, bounds = { w: 0, h: 0 }, vp = { x: 0, y: 0, k: 1 }, fitted = null;
 function visibleNodes() { const out = []; (function w(n) { out.push(n); if (!n.collapsed) n.children.forEach(w); })(M.root); return out; }
 function nodeEl(n) {
   let el = els.get(n.id);
@@ -878,10 +882,21 @@ function layout() {
     let y = -total / 2;
     for (const c of list) { place(c, side === "r" ? r0.w / 2 + HG0 : -r0.w / 2 - HG0, y, side); y += H[c.id] + VGM; }
   }
+  // Nodes dragged to a place of their own carry an offset from their tidy position. Offsets add up down
+  // the tree, so a moved node's sub-branches travel with it. B is where each node would sit without its own offset.
+  const B = {};
+  (function shift(n, ax, ay) {
+    const p = P[n.id]; if (!p) return;
+    B[n.id] = { x: p.x + ax, y: p.y + ay };
+    if (n.offset) { ax += n.offset[0]; ay += n.offset[1]; }
+    p.x += ax; p.y += ay;
+    if (!n.collapsed) n.children.forEach(c => shift(c, ax, ay));
+  })(M.root, 0, 0);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of Object.values(P)) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + p.w); y1 = Math.max(y1, p.y + p.h); }
   const dx = MARGIN - x0, dy = MARGIN - y0;
-  for (const p of Object.values(P)) { p.x += dx; p.y += dy; }
+  for (const p of [...Object.values(P), ...Object.values(B)]) { p.x += dx; p.y += dy; }
+  base = B;
   // keep the centre topic still on screen when the map grows on one side
   const old = pos[M.root.id], nw = P[M.root.id];
   if (old && fitted === M.id) { vp.x += (old.x - nw.x) * vp.k; vp.y += (old.y - nw.y) * vp.k; }
@@ -941,7 +956,8 @@ function draw() {
     if (f.p) {
       const q = box.get(f.p.id);
       if (q) {
-        const right = f.side === "r", x1 = right ? q.x + q.w : q.x, y1 = q.y + q.h / 2, x2 = right ? b.x : b.x + b.w, y2 = b.y + b.h / 2, dx = x2 - x1;
+        // leave from whichever side faces the child, wherever it was dragged
+        const right = b.x + b.w / 2 >= q.x + q.w / 2, x1 = right ? q.x + q.w : q.x, y1 = q.y + q.h / 2, x2 = right ? b.x : b.x + b.w, y2 = b.y + b.h / 2, dx = x2 - x1;
         const d = `M${x1},${y1} C${x1 + dx * .5},${y1} ${x2 - dx * .5},${y2} ${x2},${y2}`, sw = f.d === 1 ? 3 : f.d === 2 ? 1.9 : 1.35;
         use(`l|${d}|${stroke}|${sw}`, () => shape(d, { stroke, strokeWidth: sw, seed: seedOf(n.id, 11), roughness: .5 }), dim);
       }
@@ -997,6 +1013,11 @@ stage.addEventListener("wheel", e => {
 $("#zIn").onclick = () => zoomAt(stage.clientWidth / 2, stage.clientHeight / 2, 1.2);
 $("#zOut").onclick = () => zoomAt(stage.clientWidth / 2, stage.clientHeight / 2, 1 / 1.2);
 $("#zFit").onclick = fit;
+$("#zTidy").onclick = tidy;
+function tidy() {
+  if (!find(M.root.id) || ![...index().map.values()].some(f => f.n.offset)) return hint("The map is already tidy");
+  mutate(() => ops.tidy()); toast("Map tidied");
+}
 
 /* ---------------- selection + editing ---------------- */
 function select(id) {
@@ -1004,7 +1025,7 @@ function select(id) {
   selected = id;
   if (step() === "map") render();
 }
-function editNode(id) {
+function editNode(id, all = true) {
   if (step() !== "map") return;
   closePops();
   if (mode() === "outline") { selected = id; render(); const t = document.querySelector(`.orow[data-id="${id}"] .otxt`); if (t) caretEnd(t); return; }
@@ -1013,11 +1034,12 @@ function editNode(id) {
   const t = el.querySelector(".txt");
   try { t.contentEditable = "plaintext-only"; } catch { t.contentEditable = "true"; }
   if (t.contentEditable !== "plaintext-only") t.contentEditable = "true";
-  editSnap = snap(); caretEnd(t); ensureVisible(id);
+  // Existing text starts out selected, so typing replaces it; an arrow key or a click places the cursor instead.
+  editSnap = snap(); caretEnd(t, all); ensureVisible(id);
 }
-function caretEnd(t) {
+function caretEnd(t, all = false) {
   t.focus({ preventScroll: true });
-  const r = document.createRange(); r.selectNodeContents(t); r.collapse(false);
+  const r = document.createRange(); r.selectNodeContents(t); if (!all) r.collapse(false);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
 // Stop editing: the text has been saved as it was typed, so only the editing state is cleared.
@@ -1051,11 +1073,11 @@ world.addEventListener("keydown", e => {
   const id = editing, f = find(id), k = e.key;
   if (k === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commitEdit(); editNode(mutate(() => f.p ? ops.sibling(id) : ops.child(id))); }
   else if (k === "Tab" && !e.shiftKey) { e.preventDefault(); commitEdit(); editNode(mutate(() => ops.child(id))); }
-  else if (k === "Tab") { e.preventDefault(); if (f.p && f.p !== M.root) { commitEdit(); mutate(() => ops.outdent(id)); editNode(id); } }
+  else if (k === "Tab") { e.preventDefault(); if (f.p && f.p !== M.root) { commitEdit(); mutate(() => ops.outdent(id)); editNode(id, false); } }
   else if (k === "Backspace" && f.p && !readText(e.target) && !f.n.children.length) { e.preventDefault(); commitEdit(); const to = mutate(() => ops.del(id)); selected = to; render(); }
   else if (k === "Escape") { e.preventDefault(); commitEdit(); render(); }
-  else if (e.altKey && e.code === "KeyT") { e.preventDefault(); toggleTask(id); editNode(id); }
-  else if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); mutate(() => ops.moveVisual(id, k === "ArrowUp" ? -1 : 1, visualSibs)); editNode(id); }
+  else if (e.altKey && e.code === "KeyT") { e.preventDefault(); toggleTask(id); editNode(id, false); }
+  else if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); mutate(() => ops.moveVisual(id, k === "ArrowUp" ? -1 : 1, visualSibs)); editNode(id, false); }
   if (e.defaultPrevented) e.stopPropagation();   // handled here: the selected-node keys below must not run too
 });
 // Siblings in the order they are drawn, top to bottom (main branches: only those on the same side).
@@ -1120,6 +1142,8 @@ document.addEventListener("keydown", e => {
     const a = visualSibs(f), i = a.indexOf(f.n); go(a[i + (k === "ArrowUp" ? -1 : 1)]?.id);
   }
   else if (k === "Escape") select(null);
+  // Typing a character on a selected node starts editing with its text selected, so the character replaces it.
+  else if (k.length === 1 && !mod && !e.altKey) editNode(selected);
 });
 
 /* ---------------- sketch: drag, pan, long-press ---------------- */
@@ -1127,6 +1151,7 @@ document.addEventListener("keydown", e => {
 // it before or after; on the middle to make it a child. A main branch dropped on empty canvas moves to
 // that side of the centre. Escape cancels. A press that doesn't move selects, or edits a selected node.
 let drag = null, pan = null, press = null;
+const capture = e => { try { stage.setPointerCapture(e.pointerId); } catch {} };
 stage.addEventListener("pointerdown", e => {
   closeCtx();
   if (e.button !== 0 || e.target.closest("[data-act], .zoom, .tools")) return;
@@ -1135,10 +1160,10 @@ stage.addEventListener("pointerdown", e => {
   if (el) {
     press = { id: el.dataset.id, x: e.clientX, y: e.clientY, pid: e.pointerId, wasSel: selected === el.dataset.id };
     press.lp = e.pointerType !== "mouse" ? setTimeout(() => { if (press && !drag) { const id = press.id; press = null; selected = id; render(); openCtx(id, e.clientX, e.clientY); } }, 550) : 0;
-    stage.setPointerCapture(e.pointerId);
+    capture(e);
   } else {
     if (editing) { commitEdit(); render(); }
-    pan = { x: e.clientX, y: e.clientY, vx: vp.x, vy: vp.y, moved: false }; stage.setPointerCapture(e.pointerId);
+    pan = { x: e.clientX, y: e.clientY, vx: vp.x, vy: vp.y, moved: false }; capture(e);
   }
 });
 stage.addEventListener("pointermove", e => {
@@ -1166,7 +1191,7 @@ function startDrag(id, e) {
   set.forEach(x => els.get(x)?.classList.add("lift"));
   const note = document.createElement("div"); note.className = "dropnote"; note.hidden = true; document.body.appendChild(note);
   const r = el.getBoundingClientRect();
-  drag = { id, ghost, note, set, ox: e.clientX - r.left, oy: e.clientY - r.top, target: null };
+  drag = { id, ghost, note, set, ox: press.x - r.left, oy: press.y - r.top, target: null };   // grab point from the press, not the first move
   moveDrag(e);
 }
 function moveDrag(e) {
@@ -1178,9 +1203,13 @@ function moveDrag(e) {
     const r = hit.getBoundingClientRect(), z = (e.clientY - r.top) / r.height, tid = hit.dataset.id, isRoot = !find(tid).p;
     const zone = isRoot || (z > .3 && z < .7) ? "child" : z <= .3 ? "before" : "after";
     d.target = { id: tid, zone }; hit.classList.add("drop-" + zone);
-  } else if (!hit && find(d.id).p === M.root) {
-    const rr0 = els.get(M.root.id).getBoundingClientRect(), side = e.clientX < rr0.left + rr0.width / 2 ? "l" : "r";
-    if (side !== find(d.id).side) { d.target = { side }; d.note.hidden = false; d.note.textContent = `Move to the ${side === "l" ? "left" : "right"} side`; d.note.style.left = e.clientX + 14 + "px"; d.note.style.top = e.clientY + 14 + "px"; }
+  } else {
+    // empty canvas (or a small nudge over its own old place): the node goes exactly where it is dropped; a main branch dropped across the centre also changes side
+    d.target = { free: true, x: e.clientX - d.ox, y: e.clientY - d.oy };
+    if (find(d.id).p === M.root) {
+      const rr0 = els.get(M.root.id).getBoundingClientRect(), side = e.clientX < rr0.left + rr0.width / 2 ? "l" : "r";
+      if (side !== find(d.id).side) { d.target.side = side; d.note.hidden = false; d.note.textContent = `Move to the ${side === "l" ? "left" : "right"} side`; d.note.style.left = e.clientX + 14 + "px"; d.note.style.top = e.clientY + 14 + "px"; }
+    }
   }
 }
 function endDrag(apply) {
@@ -1188,7 +1217,12 @@ function endDrag(apply) {
   d.ghost.remove(); d.note.remove();
   document.querySelectorAll(".drop-child,.drop-before,.drop-after,.lift").forEach(x => x.classList.remove("drop-child", "drop-before", "drop-after", "lift"));
   const t = d.target; if (!apply || !t) return;
-  if (t.side) return mutate(() => ops.setSide(d.id, t.side === "l" ? "left" : "right"));
+  if (t.free) {
+    mutate(() => { if (t.side) ops.setSide(d.id, t.side === "l" ? "left" : "right"); });   // one undo step for the whole drop
+    const sr = stage.getBoundingClientRect(), b = base[d.id], n = find(d.id).n;
+    n.offset = [Math.round((t.x - sr.left - vp.x) / vp.k - b.x), Math.round((t.y - sr.top - vp.y) / vp.k - b.y)];
+    selected = d.id; touch(); render(); return;
+  }
   const tf = find(t.id);
   if (t.zone === "child") return mutate(() => ops.moveTo(d.id, t.id, tf.n.children.length));
   // before/after as drawn: on the left side main branches are drawn in reverse order
@@ -1385,7 +1419,7 @@ function openCtx(id, x, y) {
   const item = (a, label, key = "", cls = "") => `<button role="menuitem" data-c="${a}" class="${cls}">${label}<kbd>${key}</kbd></button>`;
   let h = "";
   if (!f.p) {
-    h = item("child", "Add branch", "Tab") + item("tags", "Manage tags…") + `<hr>` + item("foldall", "Fold all") + item("unfoldall", "Unfold all");
+    h = item("child", "Add branch", "Tab") + item("tags", "Manage tags…") + `<hr>` + item("tidy", "Tidy the map") + item("foldall", "Fold all") + item("unfoldall", "Unfold all");
   } else {
     h = item("child", "Add child", "Tab") + item("sibling", "Add sibling", "Enter") + `<hr>` + item("task", n.task ? "Remove task" : "Make task", "Alt+T");
     if (n.task) h += `<div class="row-sw"><span class="lb">Status</span><span class="stat3">${STATS.map(s => `<button data-c="st-${s}" aria-pressed="${n.task.status === s}">${STAT_TXT[s]}</button>`).join("")}</span></div>` + item("details", "Task details…");
@@ -1406,6 +1440,7 @@ function openCtx(id, x, y) {
     else if (c === "tags") openTagManager();
     else if (c === "foldall" || c === "unfoldall") mutate(() => walk(M.root, (x, d) => { if (d > 0 && x.children.length) x.collapsed = c === "foldall"; }));
     else if (c === "autoside") mutate(() => ops.setSide(id, "auto"));
+    else if (c === "tidy") tidy();
     else act(c, id, anchor);
   });
   m.addEventListener("keydown", e => {
@@ -1638,7 +1673,7 @@ boardEl.addEventListener("click", e => {
 });
 boardEl.addEventListener("dblclick", e => {
   const t = e.target.closest(".bt"); if (!t) return;
-  closePops(); editSnap = snap(); t.contentEditable = "true"; caretEnd(t);
+  closePops(); editSnap = snap(); t.contentEditable = "true"; caretEnd(t, true);
 });
 boardEl.addEventListener("input", e => { if (e.target.classList.contains("bt")) typed(e.target.closest(".bcard").dataset.id, readText(e.target)); });
 boardEl.addEventListener("keydown", e => { if (e.target.classList.contains("bt") && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); e.stopPropagation(); e.target.blur(); } }, true);
@@ -2130,7 +2165,7 @@ window.addEventListener("resize", () => { if (step() === "map") applyVP(); });
 if (TEST) window.__mindmapStudio = {
   get map() { return M; }, get store() { return store; }, get selected() { return selected; }, get filter() { return F; },
   get undoDepth() { return undoStack.length; }, get pos() { return pos; }, get inkCount() { return svg.childNodes.length; },
-  index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
+  get base() { return base; }, tidy, index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
   createTag, addTag, tagOps, near, tkey, matches, keepSet, setFilter, quickFilter, allTasks, shownTasks, overdue, fmtDate,
   mapMarkdown, tasksMarkdown, boardMarkdown, parseMarkdown, readAny, fileObj, buildCsv, tasksHtml, boardHtml, exportAs, buildPng, withSketchPng,
   exampleMap, blankMap, newMap, switchTo, importText, openPicker, openDetails, openCtx, openTagManager, renderQC, QC, mergeStores, goToMap,

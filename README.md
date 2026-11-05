@@ -1,6 +1,6 @@
 # Mindmap Studio
 
-Version 1.0. The version shows after the app's name in the toolbar and on exported pages. It is set once, as `APP_VERSION` near the top of the script: raise the minor number for new features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
+Version 1.1. The version shows after the app's name in the toolbar and on exported pages. It is set once, as `APP_VERSION` near the top of the script: raise the minor number for new features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
 
 A single-page app for thinking a project through as a mind map and then running it, in three steps: branch out ideas on a hand-drawn map, flag any node as a task, then track those tasks in a table and on a board.
 
@@ -12,8 +12,8 @@ The whole app is one self-contained HTML file: [`mindmap-studio.html`](mindmap-s
 
 - **Three steps.** The step bar at the top runs Map › Tasks › Board. A new map opens on a blank canvas with one box in the middle, ready to type.
 - **Hand-drawn mind map.** Main branches sit on both sides of the centre topic and are balanced automatically, so the map reads clockwise from the top right. Boxes and lines are inked by hand with Rough.js. Lines are thicker near the centre and finer further out.
-- **Type directly on the map.** Click a node to select it, click again (or press Enter) to edit it. Enter adds a sibling and Tab adds a child.
-- **Drag to rearrange.** Drop on the top or bottom of a node to place before or after it, or on its middle to make it a child. Drag a main branch across the centre, or press Alt+← / Alt+→, to move it to the other side.
+- **Type directly on the map.** Click a node to select it, click again (or press Enter) to edit it. Editing starts with the text selected, so typing replaces it, and typing on a selected node starts editing straight away. Enter adds a sibling and Tab adds a child.
+- **Drag anywhere, then tidy.** Drop a node on empty canvas and it stays exactly there, with its sub-branches. Drop it on the top or bottom of another node to place it before or after, or on its middle to make it a child. Drag a main branch across the centre, or press Alt+← / Alt+→, to move it to the other side. **Tidy** (beside Fit) brings every node back into a tidy structure.
 - **Right-click menu.** It mirrors the node toolbar: add, make task, status, task details, tags, colour, side, fold and delete.
 - **Colour.** Each main branch has its own colour, used for the outline and lines of everything in it. Change it from the right-click menu on any node in the branch. The Colour switch in the toolbar turns colour off for the plain ink look, and on again with every colour as it was.
 - **Tasks.** Any node can be a task (Alt+T). A task has a status (to do, doing, done), the people it is delegated to and a due date. It is shaded light red, amber or green by status, and its text is never struck through. Overdue dates show in red.

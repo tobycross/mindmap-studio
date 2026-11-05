@@ -345,6 +345,57 @@ test("Enter on the centre adds a main branch; Tab while typing adds exactly one 
   eq(A.index().map.size, 3);
 });
 
+/* ---------- 1.1: select-all editing and free placement ---------- */
+test("Editing a node selects its text, so typing replaces it", () => {
+  fresh(); A.render();
+  const id = node("Training plan").id;
+  A.editNode(id);
+  eq(W.getSelection().toString(), "Training plan", "whole text selected");
+  D.querySelector(`.node[data-id="${id}"] .txt`).dispatchEvent(new W.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+});
+test("Typing a character on a selected node starts editing", () => {
+  fresh(); A.render();
+  const id = node("Training plan").id;
+  A.select(id); D.activeElement?.blur();
+  D.body.dispatchEvent(new W.KeyboardEvent("keydown", { key: "x", bubbles: true }));
+  ok(D.querySelector(`.node[data-id="${id}"]`).classList.contains("editing"), "now editing");
+  eq(W.getSelection().toString(), "Training plan", "text selected, ready to be replaced");
+  D.querySelector(`.node[data-id="${id}"] .txt`).dispatchEvent(new W.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+});
+const pdown = (el, x, y, type) => el.dispatchEvent(new W.PointerEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 1, pointerType: "mouse" }));
+test("Drag to empty canvas: the node and its sub-branches go there, one undo step", async () => {
+  fresh(); A.render(); D.body.classList.add("no-anim");
+  const fit = node("Fit-out").id, kid = node("Order the coffee machine").id, before = { ...A.pos[fit] }, kidBefore = { ...A.pos[kid] };
+  const el = D.querySelector(`.node[data-id="${fit}"]`), r = el.getBoundingClientRect(), stage = D.getElementById("stage");
+  const sx = r.left + 10, sy = r.top + 10;
+  const depth = A.undoDepth;
+  const sr = stage.getBoundingClientRect(), tx = sr.left + 40, ty = sr.top + 40, dx = tx - sx, dy = ty - sy;
+  ok(!D.elementFromPoint(tx, ty)?.closest(".node"), "dropping on empty canvas");
+  pdown(el, sx, sy, "pointerdown");
+  pdown(stage, sx + dx / 2, sy + dy / 2, "pointermove"); pdown(stage, tx, ty, "pointermove");
+  pdown(stage, tx, ty, "pointerup");
+  const f = A.find(fit).n; ok(f.offset, "has an offset");
+  const nr = D.querySelector(`.node[data-id="${fit}"]`).getBoundingClientRect();
+  ok(Math.abs(nr.left - (tx - 10)) < 2 && Math.abs(nr.top - (ty - 10)) < 2, "lands where it was dropped");
+  const rel = (a, b) => [Math.round(A.pos[a].x - A.pos[b].x), Math.round(A.pos[a].y - A.pos[b].y)];
+  eq(rel(kid, fit), [Math.round(kidBefore.x - before.x), Math.round(kidBefore.y - before.y)], "sub-branch moved with it");
+  eq(A.find(fit).p.text, "Premises", "structure unchanged");
+  eq(A.undoDepth, depth + 1, "one undo step");
+  A.undo(); ok(!A.find(fit).n.offset, "undo puts it back");
+  D.body.classList.remove("no-anim");
+});
+test("Tidy clears every free placement; a structural move joins tidily; JSON keeps offsets", () => {
+  fresh();
+  A.mutate(() => { node("Fit-out").offset = [30, 80]; node("Money").offset = [-20, -40]; });
+  const m = A.readAny(JSON.stringify(A.fileObj())); let o; (function w(n) { if (n.text === "Fit-out") o = n.offset; n.children.forEach(w); })(m.root);
+  eq(o, [30, 80], "saved and opened");
+  A.tidy(); ok(!node("Fit-out").offset && !node("Money").offset, "tidied");
+  A.undo(); eq(node("Money").offset, [-20, -40], "tidy is one undo step");
+  A.mutate(() => A.ops.moveTo(node("Fit-out").id, node("People").id, 0)); ok(!node("Fit-out").offset, "moved into the structure: tidy again");
+  fresh(); A.render();
+  const b = Object.values(A.pos); ok(b.length > 20, "tidy layout after reload");
+});
+
 /* ---------- runner ---------- */
 async function run() {
   const fr = document.getElementById("app");

@@ -1,6 +1,6 @@
 # Mindmap Studio: functional specification
 
-Status: agreed draft, 5 November 2026. Target release: version 1.0.
+Status: agreed, 5 November 2026. Built as version 1.0.
 
 Mindmap Studio is a single-page app for thinking a project through as a mind map and then running it. You start with a blank canvas and one box in the middle, branch out ideas on both sides, flag any node as a task, and track those tasks on a summary table and a board.
 
@@ -104,8 +104,8 @@ All of this is as in Issue Tree Studio unless stated:
 - Click a node to select it. Click again, or press Enter on a selected node, to edit its text. Escape stops editing.
 - **Node toolbar.** A small toolbar appears above the selected node: **+ Child**, **+ Sibling**, **Task**, **Tag**, **Fold**, **Delete**. On the centre topic it shows **+ Branch** only. Task shows **Details** instead once the node is a task (section 5.4).
 - **Add button.** A round "+" appears beside a node on hover, on its outer side, and adds a child.
-- **Drag.** Drag a node to reorder it among its siblings, to give it a new parent, or (for a main branch) to move it to the other side. Its sub-branches travel with it. The map reflows live while you drag, with the same drop markers and ghost card as Issue Tree Studio. Escape cancels. Every drop is one undo step.
-- **Fold.** Folding a node hides everything below it. A dashed pill beside it shows how many nodes are hidden, for example "+5", and "5 · 2 tasks" when tasks are among them. Clicking the pill unfolds it.
+- **Drag.** Drag a node to reorder it among its siblings, to give it a new parent, or (for a main branch) to move it to the other side. Its sub-branches travel with it. A ghost card follows the pointer and the drop markers of Issue Tree Studio's Outline show where it will land: a bar above or below a node places it before or after, a dashed box makes it a child. A main branch dropped on empty canvas moves to that side of the centre. Escape cancels. Every drop is one undo step.
+- **Fold.** Folding a node hides everything below it. A dashed pill beside it shows how many nodes are hidden, for example "+5", and "+5 · 2 tasks" when tasks are among them. Clicking the pill unfolds it.
 - **Pan and zoom.** Drag on empty canvas to pan, pinch or ⌘ + scroll to zoom. The zoom controls at the bottom right are −, Fit and +, as in the other Studios.
 
 ### 3.5 Right-click menu
@@ -115,13 +115,13 @@ This is new to the Studio family, so it mirrors the node toolbar and adds nothin
 | Section | Items (shortcut shown on the right) |
 | --- | --- |
 | Add | Add child (Tab) · Add sibling (Enter) |
-| Task | Make task / Remove task (Alt+T) · Status ▸ To do, Doing, Done · Task details… |
+| Task | Make task / Remove task (Alt+T) · Status (To do, Doing and Done buttons in one row) · Task details… |
 | Tags | Add tag… · Manage tags… |
-| Branch | Colour ▸ (palette, plus "Automatic") · Automatic side (main branches with a fixed side only) · Fold / Unfold |
+| Branch | Colour (a row of eight swatches, plus Automatic) · Automatic side (main branches with a fixed side only) · Fold / Unfold |
 | | Delete |
 
 - On the centre topic the menu shows Add branch, Manage tags and Fold all / Unfold all.
-- Status ▸ appears only on tasks.
+- The Status row appears only on tasks.
 - Escape or a click elsewhere closes the menu. The arrow keys move through it and Enter chooses.
 
 ### 3.6 Outline view
@@ -138,7 +138,7 @@ The same map as an indented document, as in Issue Tree Studio's Outline view, wi
 
 - **Colour applies to a whole main branch.** The main branch and everything below it share one colour. The colour is used for the outline of each node and the connectors in that branch.
 - **Automatic colours.** A new main branch takes the next colour in the palette that isn't already used by another branch. Once all eight are used, the palette repeats.
-- **Changing it.** Right-click any node in a branch, then Colour ▸ and a swatch. This changes the colour of its whole main branch, even when you right-click a node deep inside it. "Automatic" goes back to the automatic colour. The centre topic is always ink. A colour change is one undo step.
+- **Changing it.** Right-click any node in a branch and choose a swatch from the Colour row. This changes the colour of its whole main branch, even when you right-click a node deep inside it. "Automatic" goes back to the automatic colour. The centre topic is always ink. A colour change is one undo step.
 - **Palette.** Eight colours: Teal, Blue, Violet, Plum, Ochre, Moss, Coral and Slate. Each has a light-theme and a dark-theme value, defined as tokens on `:root` like the other Studio colours, and each must read clearly on both the paper and the task shades (section 5.3). The palette avoids the pure red, amber and green kept for task status.
 - **Toggle.** Colour On/Off in the toolbar. Off draws every outline and connector in plain ink, the classic Studio look. It changes the view only, never the saved colours, so turning it back on restores them. Task shading stays in both cases, because it carries meaning.
 - **Elsewhere.** When Colour is on, branch colours also mark the group headings on the Tasks step and the left edge of cards on the Board. The toggle on the Map controls all three.
@@ -256,7 +256,7 @@ A table of every task, modelled on Issue Tree Studio's Workplan step.
 ### 9.2 Table
 
 - **Groups.** Rows are grouped under their main branch, in map order (right side top to bottom, then left side, the clockwise reading order). Each group heading shows the branch name, its colour bar when Colour is on, and "2 of 4 done". Within a group, rows follow map order.
-- **Columns:** ☐ (checkbox) · Task · Where (the path between the main branch and the task, for example "Fit-out ›") · Status · Delegated to · Due · Tags.
+- **Columns:** ☐ (checkbox) · Task · Where (the path from the main branch to the task's parent, for example "Premises › Fit-out") · Status · Delegated to · Due · Tags.
 - **Row shading.** Each row carries the same status tint as on the map, as a soft band. Overdue dates show in red.
 - **Sort.** "Sort: Map order / Due date" sits above the table. Due date lists all tasks in one list, earliest first and undated last, without groups.
 - **Editing in place.**
@@ -444,6 +444,7 @@ format: 1
 | Shift+Tab | Move one level towards the centre | Outdent |
 | Alt+↑ / Alt+↓ | Reorder among siblings | Reorder among siblings |
 | Backspace on an empty node | Delete it | Delete it |
+| Delete or Backspace on a selected node (not editing) | Delete it and its sub-branches | — |
 | ⌘Z / ⇧⌘Z | Undo / redo | Undo / redo |
 | Escape | Stop editing; close a menu, popover or drag | Stop editing |
 
@@ -563,7 +564,7 @@ Run these in order in a fresh browser profile. Each step states what must be tru
 
 | # | Do | Expect |
 | --- | --- | --- |
-| AT-10 | Right-click "Order the coffee machine", then Colour ▸ Plum. | The whole Premises branch (Premises, Sign the lease, Fit-out and everything below, Licences and below) turns Plum. Other branches don't change. ⌘Z restores Teal. |
+| AT-10 | Right-click "Order the coffee machine" and choose the Plum swatch. | The whole Premises branch (Premises, Sign the lease, Fit-out and everything below, Licences and below) turns Plum. Other branches don't change. ⌘Z restores Teal. |
 | AT-11 | Set Colour to Off. | All outlines and connectors are ink. Task shading stays. On Tasks, the group colour bars are gone. On Board, the card edges are gone. |
 | AT-12 | Set Colour back to On. | Every branch colour comes back exactly as it was. |
 

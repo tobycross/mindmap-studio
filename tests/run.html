@@ -1,0 +1,367 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mindmap Studio tests</title>
+<!--
+  Serve the repository folder (python3 -m http.server 8766) and open /tests/run.html.
+  The app loads in the frame with ?test, which keeps its storage apart from real maps and exposes
+  window.__mindmapStudio. Today is frozen at 2026-11-05 so overdue results never drift.
+-->
+<style>
+body{font:14px/1.5 system-ui,sans-serif;margin:20px;color:#222}
+h1{font-size:20px;margin:0 0 4px}#sum{font-weight:600;margin-bottom:12px}
+.pass{color:#23935F}.fail{color:#C93A31}
+li{margin:2px 0}li pre{margin:2px 0 6px;font-size:12px;white-space:pre-wrap;color:#C93A31}
+iframe{width:1200px;height:760px;border:1px solid #ccc;margin-top:16px}
+</style>
+<h1>Mindmap Studio tests</h1>
+<div id="sum">Running…</div>
+<ol id="out"></ol>
+<iframe id="app" src="../mindmap-studio.html?test"></iframe>
+<script>
+const out = document.getElementById("out"), results = [];
+let A, W, D;   // the app handle, its window and its document
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function eq(a, b, msg) { const x = JSON.stringify(a), y = JSON.stringify(b); if (x !== y) throw new Error(`${msg || "Not equal"}\n  got:      ${x}\n  expected: ${y}`); }
+function ok(c, msg) { if (!c) throw new Error(msg || "Expected true"); }
+const tests = [];
+const test = (name, fn) => tests.push([name, fn]);
+
+// Helpers over the app's state.
+const names = list => list.map(n => n.text);
+const node = text => { let hit; (function w(n) { if (n.text === text) hit = n; n.children.forEach(w); })(A.map.root); if (!hit) throw new Error("No node " + text); return hit; };
+const fresh = () => { A.clearFilter && A.newMap(A.exampleMap()); A.clearFilter(); A.render(); };
+const tagNames = n => n.tags.map(t => A.map.tags.find(x => x.id === t).name);
+
+/* ---------- the worked example (SPEC 18.1) ---------- */
+test("Example: 23 nodes, 9 tasks, statuses and overdue", () => {
+  fresh();
+  eq(A.index().map.size, 23, "nodes");
+  const t = A.allTasks();
+  eq(t.length, 9, "tasks");
+  eq(["todo", "doing", "done"].map(s => t.filter(n => n.task.status === s).length), [5, 2, 2], "status counts");
+  eq(names(t.filter(A.overdue)), ["Food hygiene registration"], "overdue");
+});
+test("Example: open tasks by person and tag counts", () => {
+  fresh();
+  const open = A.allTasks().filter(n => n.task.status !== "done"), by = p => open.filter(n => n.task.people.includes(p)).length;
+  eq(["Priya", "Alex", "Sam", "Jo"].map(by), [3, 2, 1, 1]);
+  const c = {}; (function w(n) { tagNames(n).forEach(x => c[x] = (c[x] || 0) + 1); n.children.forEach(w); })(A.map.root);
+  eq(c, { legal: 2, suppliers: 2, equipment: 1, hiring: 2, marketing: 2, finance: 1 });
+});
+test("Layout: two branches each side, clockwise order, left grows left", () => {
+  fresh(); A.render();
+  const ix = A.index(), P = A.pos;
+  eq(names(ix.right), ["Premises", "People"]); eq(names(ix.left), ["Launch marketing", "Money"]);
+  eq(names(ix.clockwise), ["Premises", "People", "Launch marketing", "Money"]);
+  const root = P[A.map.root.id];
+  ok(P[node("Premises").id].x > root.x + root.w, "Premises on the right");
+  ok(P[node("Local press").id].x + P[node("Local press").id].w < P[node("Launch marketing").id].x, "Left children grow left");
+  ok(P[node("Money").id].y < P[node("Launch marketing").id].y, "Money drawn above Launch marketing (clockwise)");
+  ok(P[node("Premises").id].y < P[node("People").id].y, "Premises above People");
+});
+test("Nothing overlaps on the example map", () => {
+  fresh(); A.render();
+  const b = Object.values(A.pos);
+  for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) {
+    const p = b[i], q = b[j];
+    ok(p.x + p.w <= q.x || q.x + q.w <= p.x || p.y + p.h <= q.y || q.y + q.h <= p.y, "Boxes overlap");
+  }
+});
+
+/* ---------- structural edits with undo ---------- */
+test("Add child, sibling and delete, each undone", () => {
+  fresh();
+  const before = JSON.stringify(A.map.root), id = node("Fit-out").id;
+  const c = A.mutate(() => A.ops.child(id)); eq(A.find(c).p.id, id);
+  const s = A.mutate(() => A.ops.sibling(c)); eq(A.find(s).p.id, id);
+  A.mutate(() => A.ops.del(c));
+  eq(node("Fit-out").children.length, 3);
+  A.undo(); A.undo(); A.undo();
+  eq(JSON.stringify(A.map.root), before, "back to the start");
+});
+test("A new main branch gets an unused colour", () => {
+  fresh();
+  const id = A.mutate(() => A.ops.child(A.map.root.id)), used = A.map.root.children.slice(0, 4).map(m => m.colour);
+  ok(!used.includes(A.find(id).n.colour), "colour is new");
+  eq(A.find(id).n.side, "auto");
+});
+test("Indent and outdent; outdenting to the centre keeps the side", () => {
+  fresh();
+  const id = node("Licences").id;
+  A.mutate(() => A.ops.indent(id)); eq(A.find(id).p.text, "Fit-out");
+  A.mutate(() => A.ops.outdent(id)); eq(A.find(id).p.text, "Premises");
+  const lp = node("Local press").id;
+  A.mutate(() => A.ops.outdent(lp)); eq(A.find(lp).p, A.map.root); eq(A.find(lp).n.side, "left"); ok(A.find(lp).n.colour, "has a colour");
+});
+test("Move: into a new parent, never into itself", () => {
+  fresh();
+  const id = node("Sign the lease").id, people = node("People").id;
+  A.mutate(() => A.ops.moveTo(id, people, 0)); eq(A.find(id).p.text, "People"); eq(A.find(id).main.text, "People");
+  A.mutate(() => A.ops.moveTo(people, id, 0)); eq(A.find(people).p, A.map.root, "refused");
+  A.undo(); A.undo(); eq(A.find(id).p.text, "Premises");
+});
+test("Side: fixed with Alt+arrow, automatic again from the menu", () => {
+  fresh();
+  const m = node("Money").id;
+  A.mutate(() => A.ops.setSide(m, "right")); eq(A.find(m).side, "r");
+  A.mutate(() => A.ops.setSide(m, "auto")); eq(A.find(m).side, "l");
+});
+test("Reorder as drawn: Alt+Up on a left branch moves it up the screen", () => {
+  fresh(); A.render();
+  const lm = node("Launch marketing").id;
+  A.select(lm); A.mutate(() => A.ops.moveVisual(lm, -1, f => [...A.index().left].reverse()));
+  A.render(); ok(A.pos[lm].y < A.pos[node("Money").id].y, "now above Money");
+});
+
+/* ---------- colour ---------- */
+test("Colour applies to the whole main branch; the toggle keeps data", () => {
+  fresh();
+  const deep = node("Order the coffee machine").id;
+  A.mutate(() => { A.find(deep).main.colour = "plum"; });
+  eq(A.find(node("Sign the lease").id).main.colour, "plum");
+  const before = JSON.stringify(A.map.root);
+  A.map.view.colour = false; A.render(); A.map.view.colour = true; A.render();
+  eq(JSON.stringify(A.map.root), before);
+  eq(D.body.dataset.colour, "on");
+});
+
+/* ---------- tasks ---------- */
+test("Make task, tick, untick, remove, and details come back", () => {
+  fresh();
+  const id = node("Training plan").id;
+  A.toggleTask(id); eq(A.find(id).n.task.status, "todo"); eq(A.allTasks().length, 10);
+  A.tick(id); eq(A.find(id).n.task.status, "done");
+  A.tick(id); eq(A.find(id).n.task.status, "todo");
+  A.mutate(() => { A.find(id).n.task.people.push("Jo"); });
+  A.toggleTask(id); ok(!A.find(id).n.task, "plain again");
+  A.toggleTask(id); eq(A.find(id).n.task.people, ["Jo"], "details restored");
+});
+test("Status cycles To do › Doing › Done", () => {
+  fresh(); const id = node("Write the press release").id;
+  A.cycleStatus(id); eq(A.find(id).n.task.status, "doing");
+  A.cycleStatus(id); eq(A.find(id).n.task.status, "done");
+  A.cycleStatus(id); eq(A.find(id).n.task.status, "todo");
+});
+test("Overdue uses the frozen date and ignores done tasks", () => {
+  fresh();
+  eq(A.fmtDate("2026-11-14"), "14 Nov"); eq(A.fmtDate("2027-01-03"), "3 Jan 2027");
+  const n = node("Food hygiene registration"); ok(A.overdue(n));
+  n.task.status = "done"; ok(!A.overdue(n), "done is never overdue");
+});
+
+/* ---------- tags ---------- */
+test("Near-duplicate rules", () => {
+  ok(A.near("Marketting", "marketing"), "two edits");
+  ok(A.near("hirings", "hiring"), "plural");
+  ok(A.near("cash-flow", "Cash flow"), "spaces and hyphens");
+  ok(!A.near("MARKETING", "marketing"), "exact match is not near, it is the same");
+  ok(!A.near("cash", "case"), "under five letters needs an exact plural or spelling");
+  ok(A.near("legal", "local"), "five letters, two edits");
+  ok(!A.near("hiring", "finance"));
+  eq(A.tkey("  Sales   Ops "), "sales ops");
+});
+test("Rename and merge tags everywhere", () => {
+  fresh();
+  const eqp = A.map.tags.find(t => t.name === "equipment").id, sup = A.map.tags.find(t => t.name === "suppliers").id;
+  A.mutate(() => A.tagOps.rename(eqp, "kit")); eq(tagNames(node("Order the coffee machine")), ["suppliers", "kit"]);
+  A.undo(); eq(tagNames(node("Order the coffee machine")), ["suppliers", "equipment"]);
+  A.mutate(() => A.tagOps.merge(eqp, sup));
+  eq(tagNames(node("Order the coffee machine")), ["suppliers"], "no doubles");
+  eq(A.map.tags.length, 5);
+});
+test("Tag picker: near-duplicate warning, Enter picks the existing tag", async () => {
+  fresh(); A.render();
+  const id = node("Training plan").id;
+  A.openPicker(id, D.body);
+  const pop = D.querySelector(".picker"), input = pop.querySelector("input");
+  input.value = "Marketting"; input.dispatchEvent(new W.Event("input", { bubbles: true }));
+  ok(pop.textContent.includes("Close to an existing tag: “marketing”"), "warning shown");
+  ok(pop.querySelector(".opt.hl").textContent.startsWith("marketing"), "existing tag highlighted");
+  input.dispatchEvent(new W.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  eq(tagNames(node("Training plan")), ["marketing"]); eq(A.map.tags.length, 6, "no new tag");
+  A.openPicker(id, D.body);
+  const i2 = D.querySelector(".picker input"); i2.value = "HIRING"; i2.dispatchEvent(new W.Event("input", { bubbles: true }));
+  ok(!D.querySelector(".picker .opt.new"), "exact match: no Create row");
+  i2.value = "Opening"; i2.dispatchEvent(new W.Event("input", { bubbles: true }));
+  ok(D.querySelector(".picker .opt.new"), "a new name offers Create");
+  D.querySelector(".picker").remove();
+});
+
+/* ---------- filter ---------- */
+test("Filter: any within a list, all across lists, ancestors kept", () => {
+  fresh();
+  const hiring = A.map.tags.find(t => t.name === "hiring").id;
+  A.setFilter("tags", hiring, true);
+  const { keep, hit } = A.keepSet();
+  eq(hit.size, 2); ok(keep.has(node("Baristas").id) && keep.has(node("People").id) && keep.has(A.map.root.id), "ancestors kept");
+  A.setFilter("people", "sam", true);
+  eq(names(A.shownTasks()), ["Hire a store manager"]);
+  A.clearFilter(); eq(A.shownTasks().length, 9);
+  A.setFilter("status", "overdue", true); eq(names(A.shownTasks()), ["Food hygiene registration"]);
+  A.clearFilter();
+});
+test("Filter fades non-matching nodes on the map", () => {
+  fresh(); A.render();
+  A.setFilter("tags", A.map.tags.find(t => t.name === "hiring").id, true);
+  const dim = [...D.querySelectorAll(".node.dim")].length, all = D.querySelectorAll(".node").length;
+  eq(all - dim, 5, "two matches plus People, Baristas and the centre");
+  A.clearFilter();
+});
+
+/* ---------- Tasks and Board steps ---------- */
+test("Tasks step: groups in clockwise order with done counts", () => {
+  fresh(); A.map.view.step = "tasks"; A.render();
+  const g = [...D.querySelectorAll(".tt .tgrp td")].map(td => td.textContent);
+  eq(g, ["Premises1 of 4 done", "People0 of 2 done", "Launch marketing0 of 2 done", "Money1 of 1 done"]);
+  eq(D.querySelectorAll(".tt tr[data-id]").length, 9);
+  ok(D.querySelector(".summary").textContent.includes("Priya3· 1 overdue"), "Priya's open and overdue");
+});
+test("Tasks step edits reach the map, and + Add task adds a node", () => {
+  fresh(); A.map.view.step = "tasks"; A.render();
+  const id = node("Order the coffee machine").id;
+  D.querySelector(`tr[data-id="${id}"] [data-ta="status"]`).click();
+  eq(A.find(id).n.task.status, "doing");
+  D.querySelector(`[data-ta="add"][data-main="${node("Money").id}"]`).click();
+  const last = node("Money").children.at(-1); ok(last.task && last.task.status === "todo", "new task under Money");
+  D.querySelector(`tr[data-id="${last.id}"] [data-ta="untask"]`).click();
+  ok(!A.find(last.id).n.task && A.find(last.id), "plain node stays on the map");
+});
+test("Board: three columns with the right counts", () => {
+  fresh(); A.map.view.step = "board"; A.render();
+  eq([...D.querySelectorAll(".col h3 span")].map(s => s.textContent), ["5", "2", "2"]);
+  eq([...D.querySelectorAll('.col[data-col="done"] .bt')].map(x => x.textContent), ["Sign the lease", "Agree the opening budget"]);
+  A.map.view.step = "map"; A.render();
+});
+
+/* ---------- files ---------- */
+test("JSON save and open round trip", () => {
+  fresh();
+  const file = JSON.stringify(A.fileObj());
+  ok(file.startsWith('{"app":"Mindmap Studio","format":1'), "header");
+  const m = A.readAny(file);
+  eq(m.root, JSON.parse(JSON.stringify(A.map.root))); eq(m.tags, A.map.tags); eq(m.view, A.map.view);
+});
+test("JSON keeps unknown fields", () => {
+  fresh();
+  const o = A.fileObj(); o.future = { x: 1 }; o.root.children[0].extra = "keep";
+  const m = A.readAny(JSON.stringify(o)); eq(m.future, { x: 1 }); eq(m.root.children[0].extra, "keep");
+});
+test("Markdown export opens again with tasks and tags", () => {
+  fresh();
+  const md = A.mapMarkdown();
+  ok(md.includes("## Premises\n\n- [x] Sign the lease · Sam · due 2026-10-20 · #legal"), "task line");
+  ok(md.includes("  - [ ] Choose a fit-out contractor _(doing)_ · Alex · due 2026-11-12 · #suppliers"), "doing line");
+  const m = A.readAny(md), flat = n => [n.text, n.task ? [n.task.status, n.task.people, n.task.due] : 0, n.tags.map(t => m.tags.find(x => x.id === t).name), n.children.map(flat)];
+  const orig = n => [n.text, n.task ? [n.task.status, n.task.people, n.task.due] : 0, tagNames(n), n.children.map(orig)];
+  eq(flat(m.root), orig(A.map.root));
+});
+test("Markdown escapes text that looks like markup", () => {
+  fresh();
+  const tricky = "[ ] not a task · with a dot <b> & _(doing)_ \\ back\nline two";
+  A.mutate(() => { node("Training plan").text = tricky; });
+  const m = A.readAny(A.mapMarkdown()); let found;
+  (function w(n) { if (n.text === tricky) found = n; n.children.forEach(w); })(m.root);
+  ok(found && !found.task, "text came back intact and not as a task");
+});
+test("Import: indented list, Issue Tree Studio and WBS Studio files", () => {
+  let r = A.parseMarkdown("Plan the launch\n  Product\n    Beta\n  Marketing\n- Extra").root;
+  eq(r.text, "Plan the launch"); eq(names(r.children), ["Product", "Marketing", "Extra"]);
+  r = A.parseMarkdown(`---\napp: Issue Tree Studio\nformat: 6\n---\n\n# Northfield profit plan\n\n## Problem definition\n\n**Problem statement:** Grow profit\n\n### Time frame\n\nEight weeks\n\n## Key question: How can we grow profit?\n\n- **1** Grow revenue _(supported)_\n  - **1.1** Raise the ticket <!-- folded -->\n- **2** Reduce costs\n\n## Workplan\n\n| Ref | Branch |\n| --- | --- |\n| 1.1 | Raise the ticket |\n`).root;
+  eq(r.text, "How can we grow profit?"); eq(names(r.children), ["Grow revenue", "Reduce costs"]); eq(names(r.children[0].children), ["Raise the ticket"]);
+  r = A.parseMarkdown(`---\napp: WBS Studio\n---\n\n# Office move WBS\n\n## Scope\n\n**Project objective:** Move\n\n## Project: Head office relocation\n\n- **1** Project management\n  - **1.1** Project plan\n- **2** New premises\n\n## Work packages\n\n| Ref |\n`).root;
+  eq(r.text, "Head office relocation"); eq(names(r.children), ["Project management", "New premises"]);
+});
+
+/* ---------- exports ---------- */
+test("CSV: byte-order mark, formula guard, nine task rows", () => {
+  fresh();
+  A.mutate(() => { node("Opening-week offer").text = "=SUM(A1)"; });
+  const c = A.buildCsv("tasks"), rows = c.trim().split("\r\n");
+  ok(c.startsWith("﻿Task,Branch,Path,Status,Delegated to,Due,Tags"), "header");
+  eq(rows.length, 10);
+  ok(c.includes("Hire a store manager,People,,Doing,\"Priya; Sam\",2026-11-20,hiring"), "people joined with ; ");
+  ok(c.includes("'=SUM(A1)"), "formula guarded");
+  ok(A.buildCsv("board").includes("﻿Column,Task"), "board column");
+  ok(A.buildCsv("map").split("\r\n").length >= 24, "one row per node");
+});
+test("Export menu: formats per step, Markdown first, filter note", () => {
+  fresh();
+  const items = () => { D.getElementById("exportBtn").click(); const r = [...D.querySelectorAll("#exportMenu button b")].map(b => b.firstChild.textContent); const head = D.querySelector("#exportMenu .mhead")?.textContent; D.getElementById("exportBtn").click(); return [r, head]; };
+  A.map.view.step = "map"; A.render(); eq(items()[0], ["Markdown", "HTML", "PNG", "CSV"]);
+  A.map.view.step = "tasks"; A.render(); eq(items()[0], ["Markdown", "HTML", "CSV"]);
+  ok(D.querySelector("#exportMenu") && true);
+  A.setFilter("tags", A.map.tags.find(t => t.name === "marketing").id, true);
+  eq(items()[1], "Filtered: 2 of 9 tasks");
+  A.clearFilter(); A.map.view.step = "map"; A.render();
+});
+test("Exports go to the downloader: Markdown, HTML, CSV and PNG", async () => {
+  fresh();
+  const got = []; A.downloader = async (name, blob) => got.push([name, blob.type, blob.size]);
+  await A.exportAs("md"); await A.exportAs("csv"); await A.exportAs("png"); await A.exportAs("html");
+  eq(got.map(g => g[0]), ["Open the Leeds store.md", "Open the Leeds store.csv", "Open the Leeds store.png", "Open the Leeds store.html"]);
+  ok(got[2][1] === "image/png" && got[2][2] > 20000, "a real PNG");
+  A.map.view.step = "tasks"; A.render(); got.length = 0; await A.exportAs("html");
+  eq(got[0][0], "Open the Leeds store-tasks.html");
+  A.map.view.step = "map"; A.render();
+});
+
+/* ---------- checks and page ---------- */
+test("Hints & checks: exactly three automatic Checks on the example", () => {
+  fresh();
+  const bad = A.QC.flatMap(s => s.items).filter(it => it.auto && !it.auto().ok).map(it => it.id);
+  eq(bad, ["t-owner", "t-due", "t-overdue"]);
+});
+test("Right-click menu mirrors the node toolbar", () => {
+  fresh(); A.render();
+  A.openCtx(node("Order the coffee machine").id, 100, 100);
+  const t = D.querySelector(".ctx").textContent;
+  ["Add child", "Add sibling", "Remove task", "Task details", "Add tag", "Manage tags", "Colour", "Delete"].forEach(s => ok(t.includes(s), s));
+  eq(D.querySelectorAll(".ctx .sw").length, 9, "eight colours and Automatic");
+  D.querySelector(".ctx").remove();
+});
+test("Typing into a node edits the map and is one undo step", async () => {
+  fresh(); A.render();
+  const id = node("Training plan").id, depth = A.undoDepth;
+  A.editNode(id);
+  const t = D.querySelector(`.node[data-id="${id}"] .txt`);
+  t.textContent = "Training plan for launch"; t.dispatchEvent(new W.Event("input", { bubbles: true }));
+  t.textContent = "Training plan for launch week"; t.dispatchEvent(new W.Event("input", { bubbles: true }));
+  eq(node("Training plan for launch week").id, id);
+  eq(A.undoDepth, depth + 1, "one undo step for the whole edit");
+  t.dispatchEvent(new W.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  A.undo(); eq(A.find(id).n.text, "Training plan");
+});
+test("Enter on the centre adds a main branch; Tab while typing adds exactly one child", () => {
+  A.newMap(A.blankMap()); A.render();
+  const root = A.map.root.id;
+  A.editNode(root);
+  let t = D.querySelector(`.node[data-id="${root}"] .txt`);
+  t.dispatchEvent(new W.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  eq(A.map.root.children.length, 1);
+  const main = A.map.root.children[0].id;
+  t = D.querySelector(`.node[data-id="${main}"] .txt`);
+  t.dispatchEvent(new W.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+  eq(A.map.root.children[0].children.length, 1, "one child, not two");
+  eq(A.index().map.size, 3);
+});
+
+/* ---------- runner ---------- */
+async function run() {
+  const fr = document.getElementById("app");
+  await new Promise(r => fr.addEventListener("load", r, { once: true }));
+  W = fr.contentWindow; D = W.document; W.__msToday = "2026-11-05";
+  for (let i = 0; i < 50 && !W.__mindmapStudio; i++) await wait(50);
+  A = W.__mindmapStudio;
+  if (D.fonts?.ready) await D.fonts.ready;
+  let pass = 0;
+  for (const [name, fn] of tests) {
+    const li = document.createElement("li");
+    try { await fn(); li.className = "pass"; li.textContent = "✓ " + name; pass++; }
+    catch (e) { li.className = "fail"; li.textContent = "✗ " + name; const p = document.createElement("pre"); p.textContent = e.message; li.appendChild(p); }
+    out.appendChild(li);
+  }
+  const s = document.getElementById("sum"); s.textContent = `${pass} of ${tests.length} passed`; s.className = pass === tests.length ? "pass" : "fail";
+  window.__results = { pass, total: tests.length };
+}
+run();
+</script>

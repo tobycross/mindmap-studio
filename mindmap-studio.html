@@ -1,0 +1,2146 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mindmap Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  Mindmap Studio: a single-file app for thinking a project through as a mind map, then running its tasks.
+  It is a companion to Issue Tree Studio and shares its look, controls and file approach. The only outside
+  pieces are Google Fonts and Rough.js, which draws the hand-inked boxes and lines.
+  Order: <style> (theme tokens, then one block per area), the markup (toolbar, filter bar, map, outline,
+  tasks, board, footer, dialogs), then the script at the bottom. SPEC.md is the functional specification.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Patrick+Hand&family=Patrick+Hand+SC&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap">
+<style>
+/* Theme tokens: the Studio paper, ink and accent, then the eight branch colours (--b-*) and the three task tints. */
+:root{
+  --paper:#F1F1EF; --hover:rgba(40,40,40,.05); --ink:#2B2B2A; --ink-2:#6E6D69; --card:#FAFAF8;
+  --hi:rgba(255,214,51,.6); --rule:#DADAD5; --chrome:#FFFFFF; --chrome-line:#DEDDD8; --accent:#2F5FD0; --accent-ink:#FFFFFF;
+  --ok:#23935F; --bad:#C93A31; --warn:#B4531A;
+  --b-teal:#1F8A7A; --b-blue:#3366CC; --b-violet:#7B5BC4; --b-plum:#A63F7E; --b-ochre:#A87410; --b-moss:#5E7F2B; --b-coral:#D2603A; --b-slate:#5B6B7A;
+  --task-todo:#F7E0DC; --task-doing:#F7EACB; --task-done:#DCEEDF;
+  --f-hand:"Patrick Hand","Kalam","Bradley Hand",cursive;
+  --f-caps:"Patrick Hand SC","Patrick Hand","Bradley Hand",cursive;
+  --f-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-doc:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1D1E1D; --hover:rgba(255,255,255,.06); --ink:#E8E6E0; --ink-2:#A3A19B; --card:#252625;
+    --hi:rgba(233,206,74,.30); --rule:#2E3C38; --chrome:#161716; --chrome-line:#333532; --accent:#86A8FF; --accent-ink:#0F1715;
+    --ok:#62CF97; --bad:#FF7A6E; --warn:#FFB074; color-scheme:dark;
+    --b-teal:#5CC8B5; --b-blue:#86A8FF; --b-violet:#B39CF0; --b-plum:#E58AC0; --b-ochre:#E2B44E; --b-moss:#A3C46A; --b-coral:#FF9A76; --b-slate:#A4B3C2;
+    --task-todo:#4A2D2A; --task-doing:#463A1F; --task-done:#243D2D;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1D1E1D; --hover:rgba(255,255,255,.06); --ink:#E8E6E0; --ink-2:#A3A19B; --card:#252625;
+  --hi:rgba(233,206,74,.30); --rule:#2E3C38; --chrome:#161716; --chrome-line:#333532; --accent:#86A8FF; --accent-ink:#0F1715;
+  --ok:#62CF97; --bad:#FF7A6E; --warn:#FFB074; color-scheme:dark;
+  --b-teal:#5CC8B5; --b-blue:#86A8FF; --b-violet:#B39CF0; --b-plum:#E58AC0; --b-ochre:#E2B44E; --b-moss:#A3C46A; --b-coral:#FF9A76; --b-slate:#A4B3C2;
+  --task-todo:#4A2D2A; --task-doing:#463A1F; --task-done:#243D2D;
+}
+html,body{height:100%;margin:0}
+[hidden]{display:none!important}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-ui);font-size:14px;overflow:hidden}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--chrome)}
+.app{height:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- toolbar (as Issue Tree Studio) ---------- */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;background:var(--chrome);border-bottom:1px solid var(--chrome-line);
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));position:relative;z-index:5}
+.brand{font-family:var(--f-caps);font-size:24px;line-height:1;letter-spacing:.2px;white-space:nowrap}
+.brand span{color:var(--accent)}
+.brand .ver{margin-left:7px;font-family:var(--f-ui);font-size:12px;font-weight:500;letter-spacing:.02em;color:var(--ink-2);vertical-align:2px}
+.grp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--chrome-line);border-radius:8px;padding:2px;background:var(--paper)}
+.seg button{border:0;background:transparent;padding:5px 11px;border-radius:6px;font-size:13px;font-weight:500;color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--chrome);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.btn{border:1px solid var(--chrome-line);background:var(--chrome);padding:5px 10px;border-radius:7px;font-size:13px;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--ink-2)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--bad)}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.icon{width:30px;padding:5px 0;text-align:center}
+.icon svg{width:15px;height:15px;display:block;margin:0 auto;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+select.btn{padding-right:6px;max-width:260px;text-overflow:ellipsis}
+.lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.steps button{display:inline-flex;align-items:center;gap:6px}
+.steps .no{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;font-size:10.5px;font-weight:600;background:var(--chrome-line);color:var(--ink-2)}
+.steps button[aria-pressed="true"] .no{background:var(--accent);color:var(--accent-ink)}
+.steps .chev{color:var(--ink-2);font-size:14px;padding:0 1px}
+body:not([data-step="map"]) .map-only{display:none}
+.menu-wrap{position:relative}
+#exportBtn{display:inline-flex;align-items:center;gap:6px}
+#exportBtn .caret{width:10px;height:10px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+/* Menus: the Export menu, the right-click menu and the filter checklists share this look. */
+.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:270px;padding:5px;background:var(--chrome);border:1px solid var(--chrome-line);border-radius:9px;box-shadow:0 10px 28px rgba(0,0,0,.16);display:flex;flex-direction:column}
+.menu button{display:grid;gap:1px;text-align:left;border:0;background:none;border-radius:6px;padding:7px 10px}
+.menu button b{font-size:13px;font-weight:600}
+.menu button b em{font-style:normal;font-weight:500;font-size:11px;color:var(--accent);margin-left:6px;letter-spacing:.03em}
+.menu button span{font-size:12px;color:var(--ink-2)}
+.menu button:hover,.menu button:focus-visible{background:var(--paper);outline:none}
+.menu .mhead{font-size:12px;color:var(--warn);padding:6px 10px 4px}
+.ctx{position:fixed;min-width:230px;right:auto;top:auto}
+.ctx button{display:flex;justify-content:space-between;align-items:center;gap:18px;font-size:13px;padding:6px 10px}
+.ctx button kbd{font-family:var(--f-ui);font-size:11.5px;color:var(--ink-2)}
+.ctx button.del{color:var(--bad)}
+.ctx hr{border:0;border-top:1px solid var(--chrome-line);margin:4px 2px}
+.ctx .row-sw{display:flex;align-items:center;gap:5px;padding:5px 10px}
+.ctx .row-sw .lb{font-size:12px;color:var(--ink-2);margin-right:auto}
+.sw{width:18px;height:18px;padding:0!important;border-radius:50%!important;border:2px solid var(--chrome)!important;box-shadow:0 0 0 1px var(--chrome-line);background:var(--c)!important}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.sw.auto{background:conic-gradient(var(--b-teal),var(--b-blue),var(--b-violet),var(--b-plum),var(--b-ochre),var(--b-moss),var(--b-coral),var(--b-teal))!important}
+.ctx .stat3{display:inline-flex;gap:2px}
+.ctx .stat3 button{padding:3px 8px;font-size:12px;border:1px solid var(--chrome-line);border-radius:6px}
+.ctx .stat3 button[aria-pressed="true"]{border-color:var(--ink);font-weight:600}
+
+/* ---------- filter bar ---------- */
+.fbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:7px max(16px,env(safe-area-inset-right,0px)) 7px max(16px,env(safe-area-inset-left,0px));background:var(--chrome);border-bottom:1px solid var(--chrome-line);font-size:12.5px;position:relative;z-index:4}
+.fbar .fsum{color:var(--ink-2);font-variant-numeric:tabular-nums}
+.fbar .menu{left:0;right:auto;min-width:200px;max-height:320px;overflow:auto}
+.fbar .menu label{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+.fbar .menu label:hover{background:var(--paper)}
+.fbar .menu label .k{margin-left:auto;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.fbar .menu .none{padding:8px 10px;color:var(--ink-2)}
+.fbar .btn.set{border-color:var(--accent);color:var(--accent)}
+.linkbtn{border:0;background:none;padding:0;font-size:12px;color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+
+/* ---------- map ---------- */
+main{position:relative;min-height:0;grid-row:3}
+.foot{grid-row:4} .fbar{grid-row:2}
+.stage{position:absolute;inset:0;overflow:hidden;touch-action:none;background:var(--paper)}
+.stage.panning{cursor:grabbing}
+.world{position:absolute;left:0;top:0;transform-origin:0 0}
+.wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+/* A node: hand-lettered text with an optional checkbox space before it and a details line under it.
+   Its box, fill and checkbox are drawn as ink in the SVG layer underneath, so the PNG export is exact. */
+.node{position:absolute;width:max-content;max-width:220px;padding:8px 13px 9px;font-family:var(--f-hand);font-size:18px;line-height:1.28;color:var(--ink);
+  user-select:none;-webkit-user-select:none;cursor:grab;transition:left .24s cubic-bezier(.2,.8,.2,1),top .24s cubic-bezier(.2,.8,.2,1),opacity .15s}
+.node.main{font-size:21px;padding:9px 15px 10px}
+.node.root{max-width:250px;font-family:var(--f-caps);font-size:28px;line-height:1.12;text-align:center;letter-spacing:.04em;padding:16px 22px}
+.node .tx{display:flex;gap:7px;align-items:baseline}
+.node.root .tx{justify-content:center}
+.node .cb{flex:none;width:13px;height:13px;cursor:pointer;align-self:center;margin-top:-1px}
+.node:not(.task) .cb{display:none}
+.node .txt{outline:none;min-height:1.28em;min-width:2ch;white-space:pre-wrap;overflow-wrap:anywhere}
+.node .txt[contenteditable]:not([contenteditable="false"]){cursor:text;user-select:text;-webkit-user-select:text}
+[data-ph]:empty::before{content:attr(data-ph);color:var(--ink-2);opacity:.6;pointer-events:none}
+.node .meta{display:flex;flex-wrap:wrap;gap:0 9px;margin-top:3px;font-size:14px;line-height:1.2;color:var(--ink-2);letter-spacing:.02em}
+.node .meta:empty,body[data-simplify="on"] .node .meta{display:none}
+.node .meta .od{color:var(--bad)}
+.node .meta .tg{cursor:pointer}
+.node .meta .tg:hover{color:var(--accent)}
+.node .meta .dt{cursor:pointer}
+.node.dim{opacity:.25}
+.node .more{position:absolute;top:50%;transform:translateY(-50%);font-family:var(--f-hand);font-size:15px;color:var(--ink-2);background:var(--paper);border:1.3px dashed var(--ink-2);border-radius:12px;padding:0 8px;cursor:pointer;white-space:nowrap}
+.node .more.hit{color:var(--accent);border-color:var(--accent)}
+.node .addc{position:absolute;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;border:1.3px solid var(--ink-2);background:var(--paper);color:var(--ink);
+  font:500 15px/1 var(--f-ui);display:grid;place-items:center;padding:0;opacity:0;transition:opacity .12s}
+.node.r .more{left:calc(100% + 10px)} .node.l .more{right:calc(100% + 10px)}
+.node.r .addc{left:calc(100% + 5px)} .node.l .addc{right:calc(100% + 5px)}
+.node.root .addc{display:none}
+.node:hover .addc,.node.sel .addc{opacity:1}
+.node.folded .addc{display:none}
+.node .tools{position:absolute;bottom:calc(100% + 7px);left:0;display:none;gap:4px;font-family:var(--f-ui);z-index:2;white-space:nowrap}
+.node.l .tools{left:auto;right:0}
+.node.root .tools{left:50%;right:auto;transform:translateX(-50%)}
+.node.sel .tools,.node.editing .tools{display:flex}
+.tools button{font-size:11.5px;font-weight:500;border:1px solid var(--chrome-line);background:var(--chrome);border-radius:6px;padding:3px 7px;color:var(--ink)}
+.tools button:hover{border-color:var(--ink-2)}
+.tools button.del{color:var(--bad)}
+.node.lift{opacity:.28}
+.node.lift .tools,.node.lift .addc{display:none}
+.node.drop-child::after{content:"";position:absolute;inset:-5px;border:2px dashed var(--accent);border-radius:10px;pointer-events:none}
+.node.drop-before::after,.node.drop-after::after{content:"";position:absolute;left:0;right:0;height:0;border-top:3px solid var(--accent);border-radius:2px;pointer-events:none}
+.node.drop-before::after{top:-7px} .node.drop-after::after{bottom:-7px}
+.ghost{position:fixed;left:0;top:0;pointer-events:none;z-index:50;opacity:.95;background:var(--paper);border:1.5px dashed var(--ink-2);border-radius:9px;box-shadow:0 10px 24px rgba(0,0,0,.14);transition:none!important}
+.dropnote{position:fixed;z-index:51;pointer-events:none;font:600 12px var(--f-ui);background:var(--accent);color:var(--accent-ink);padding:3px 8px;border-radius:5px}
+.zoom{position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:14px;display:flex;gap:6px;z-index:3}
+.zoom .btn{box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+/* ---------- pages: outline, tasks, board ---------- */
+.page{position:absolute;inset:0;overflow:auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheetpg{max-width:1240px;margin:0 auto;background:var(--chrome);border:1px solid var(--chrome-line);border-radius:4px;padding:32px 36px 36px}
+.kicker{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+.pg-title{margin:0 0 6px;font-family:var(--f-doc);font-size:24px;line-height:1.25;text-wrap:balance}
+.pg-intro{margin:0 0 14px;color:var(--ink-2);font-size:13px;line-height:1.5;max-width:70ch}
+/* Outline: the document with live Markdown beside it. */
+.ogrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,380px);gap:24px;max-width:1240px;margin:0 auto;align-items:start}
+.doc{background:var(--chrome);border:1px solid var(--chrome-line);border-radius:4px;padding:36px 40px 40px;min-width:0;font-family:var(--f-doc)}
+.orow{--d:0;--c:var(--ink);position:relative;display:grid;grid-template-columns:18px auto minmax(0,1fr);align-items:baseline;column-gap:7px;padding:4px 8px 4px calc(var(--d) * 28px + 8px);border-radius:5px}
+.orow.d0{padding-bottom:16px;margin-bottom:12px;border-bottom:2px solid var(--ink);border-radius:0}
+.orow.d0 .otxt{font-size:26px;font-weight:700;line-height:1.25}
+.orow.d1{margin-top:10px}
+.orow.d1 .otxt{font-weight:600;font-size:18px}
+body[data-colour="on"] .orow.d1{box-shadow:inset 3px 0 0 var(--c)}
+.orow .fold{border:0;background:none;padding:0;color:var(--ink-2);font-size:11px;width:18px}
+.orow .ocb{width:13px;height:13px;border:1.5px solid var(--ink-2);border-radius:3px;display:inline-block;cursor:pointer;vertical-align:-1px;position:relative}
+.orow.t-doing .ocb{border-style:dashed}
+.orow.t-done .ocb::after{content:"";position:absolute;left:3px;top:0;width:4px;height:8px;border:solid var(--ink);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.orow .otxt{outline:none;font-size:16.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.orow .ometa{grid-column:3;font-family:var(--f-ui);font-size:12px;color:var(--ink-2)}
+body[data-simplify="on"] .orow .ometa{display:none}
+.orow.sel{outline:1.5px solid var(--accent)}
+.orow.dim{opacity:.3}
+.t-todo.tint{background:var(--task-todo)} .t-doing.tint{background:var(--task-doing)} .t-done.tint{background:var(--task-done)}
+.od{color:var(--bad)}
+.md{position:sticky;top:0;background:var(--chrome);border:1px solid var(--chrome-line);border-radius:4px;min-width:0;display:flex;flex-direction:column;max-height:calc(100vh - 170px)}
+.md header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--chrome-line)}
+.md pre{margin:0;padding:14px;overflow:auto;font-family:var(--f-mono);font-size:12.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+/* Tasks: the Workplan table, with status tints on the rows. */
+.summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:12.5px;color:var(--ink-2);margin-bottom:16px}
+.summary .tot b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
+.summary .sep{width:1px;height:16px;background:var(--chrome-line);margin:0 6px}
+.chip{display:inline-flex;align-items:center;gap:2px;font-size:12.5px;line-height:20px;padding:0 3px 0 8px;border:1px solid var(--chrome-line);border-radius:12px;background:var(--paper);white-space:nowrap}
+.chip .x{border:0;background:none;padding:0 4px;color:var(--ink-2);font-size:14px;line-height:1;border-radius:50%}
+.chip .x:hover{color:var(--bad)}
+button.chip{cursor:pointer;padding:0 8px;font-family:inherit;color:var(--ink)}
+button.chip .k{color:var(--ink-2);margin-left:5px;font-variant-numeric:tabular-nums}
+button.chip .k.od{color:var(--bad)}
+button.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.chip[aria-pressed="true"] .k{color:inherit}
+.chip.tag{background:transparent;color:var(--ink-2)}
+button.chip.tag{color:var(--ink-2)}
+.chips{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.addin{border:1px dashed var(--chrome-line);background:transparent;border-radius:12px;padding:1px 8px;font-size:12.5px;line-height:18px;width:8em;min-width:0}
+.addin:focus{border-style:solid;border-color:var(--accent);outline:none}
+.addtag{border:1px dashed var(--chrome-line);background:transparent;border-radius:12px;padding:0 8px;font-size:12.5px;line-height:20px;color:var(--ink-2)}
+.tbl-top{display:flex;justify-content:flex-end;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);margin:-6px 0 8px}
+.tt{width:100%;border-collapse:collapse;font-size:14px}
+.tt th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding:8px 10px;border-bottom:2px solid var(--ink)}
+.tt td{padding:8px 10px;border-bottom:1px solid var(--chrome-line);vertical-align:top}
+.tt .tgrp td{padding-top:22px;font-family:var(--f-doc);font-weight:700;font-size:16px;border-bottom:1px solid var(--rule)}
+body[data-colour="on"] .tt .tgrp td:first-child{box-shadow:inset 4px 0 0 var(--c)}
+.tt .tgrp .k{font-family:var(--f-ui);font-weight:500;font-size:12px;color:var(--ink-2);margin-left:10px}
+.tt tr.t-todo td{background:color-mix(in srgb,var(--task-todo) 55%,transparent)}
+.tt tr.t-doing td{background:color-mix(in srgb,var(--task-doing) 60%,transparent)}
+.tt tr.t-done td{background:color-mix(in srgb,var(--task-done) 60%,transparent)}
+.tt .c-cb{width:1%}
+.tt .c-tx{min-width:200px}
+.ed{outline:none;min-height:1.45em;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:4px;padding:2px 5px;margin:-2px -5px;cursor:text}
+.ed:hover{background:var(--hover)} .ed:focus{background:var(--paper);box-shadow:0 0 0 1.5px var(--accent)}
+.tt .c-wh{font-size:12.5px;color:var(--ink-2);width:14%}
+.tt .c-wh button{border:0;background:none;padding:0;color:inherit;text-align:left;text-decoration:underline dotted;text-underline-offset:3px}
+.tt .c-du{width:1%;white-space:nowrap}
+.tt .c-x{width:1%}
+.tt .c-x button{border:0;background:none;color:var(--ink-2);font-size:16px;padding:0 4px;opacity:.6}
+.tt .c-x button:hover{opacity:1;color:var(--bad)}
+input[type="date"]{font:inherit;font-size:13px;border:1px solid var(--chrome-line);border-radius:6px;padding:3px 6px;background:var(--chrome);color:var(--ink)}
+input[type="date"].od{color:var(--bad);border-color:var(--bad)}
+.stat{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--chrome-line);background:var(--chrome);border-radius:20px;padding:1px 8px;color:var(--ink-2);white-space:nowrap}
+.stat.s-doing{color:var(--warn);border-color:currentColor} .stat.s-done{color:var(--ok);border-color:currentColor} .stat.s-todo{color:var(--bad);border-color:currentColor}
+.cbx{width:15px;height:15px;border:1.5px solid var(--ink-2);border-radius:3px;background:var(--chrome);padding:0;position:relative;vertical-align:-2px}
+.cbx.s-doing{border-style:dashed}
+.cbx.s-done::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--ink);border-width:0 2px 2px 0;transform:rotate(40deg)}
+.tt .addrow td{border-bottom:0;padding-top:4px}
+.empty{padding:40px 10px;text-align:center;color:var(--ink-2)}
+.empty p{margin:0 0 12px}
+/* Board: three fixed columns of hand-lettered cards. */
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;max-width:1240px;margin:0 auto;align-items:start}
+.col{border-radius:8px;padding:12px;min-height:200px;border:1px solid var(--chrome-line)}
+.col.c-todo{background:color-mix(in srgb,var(--task-todo) 35%,var(--chrome))}
+.col.c-doing{background:color-mix(in srgb,var(--task-doing) 35%,var(--chrome))}
+.col.c-done{background:color-mix(in srgb,var(--task-done) 35%,var(--chrome))}
+.col.over{outline:2px dashed var(--accent);outline-offset:-4px}
+.col h3{margin:2px 4px 12px;font-family:var(--f-caps);font-weight:400;font-size:22px;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:baseline}
+.col h3 span{font-family:var(--f-ui);font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.bcard{--c:var(--ink-2);background:var(--chrome);border:1px solid var(--chrome-line);border-radius:7px;padding:9px 11px 9px 13px;margin-bottom:8px;cursor:grab;touch-action:none;position:relative;user-select:none;-webkit-user-select:none}
+body[data-colour="on"] .bcard{box-shadow:inset 3px 0 0 var(--c)}
+.bcard:hover{border-color:var(--ink-2)}
+.bcard.sel{border-color:var(--accent);outline:1px solid var(--accent)}
+.bcard.lift{opacity:.3}
+.bcard .bt{font-family:var(--f-hand);font-size:18px;line-height:1.25;white-space:pre-wrap;overflow-wrap:anywhere;outline:none}
+.bcard .bm{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:5px;font-size:12px;color:var(--ink-2)}
+.bcard .bm .br{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.bcard .bm .tg{cursor:pointer}
+@media (max-width:760px){.board{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- popovers: task details and the tag picker ---------- */
+.pop{position:fixed;z-index:45;background:var(--chrome);border:1px solid var(--chrome-line);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:12px 14px;width:290px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.pop .fl{display:grid;gap:5px}
+.pop .fl>span{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.pop .due{display:flex;gap:6px;align-items:center}
+.picker{width:280px;padding:5px;gap:0}
+.picker input{border:0;border-bottom:1px solid var(--chrome-line);background:none;padding:7px 9px;font-size:13px;outline:none}
+.picker .opts{display:flex;flex-direction:column;max-height:260px;overflow:auto;padding-top:4px}
+.picker .opt{display:flex;justify-content:space-between;gap:8px;border:0;background:none;text-align:left;padding:6px 9px;border-radius:6px;font-size:13px}
+.picker .opt .k{font-size:11.5px;color:var(--ink-2)}
+.picker .opt.hl{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.picker .opt.new{color:var(--ink-2);border-top:1px solid var(--chrome-line);border-radius:0 0 6px 6px;margin-top:3px}
+.picker .sub{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);padding:7px 9px 3px}
+.picker .warnl{font-size:12px;color:var(--warn);padding:5px 9px}
+
+/* ---------- footer, dialogs, toast, checklist (as Issue Tree Studio) ---------- */
+.foot{display:flex;flex-wrap:wrap;gap:4px 18px;align-items:center;font-size:12px;color:var(--ink-2);background:var(--chrome);border-top:1px solid var(--chrome-line);
+  padding-block:7px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.foot kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--chrome-line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--paper);color:var(--ink)}
+.foot .stats{font-variant-numeric:tabular-nums;color:var(--ink)}
+.foot .stats .od{color:var(--bad)}
+.foot .sync{margin-left:auto}
+.overlay{position:fixed;inset:0;z-index:60;background:rgba(10,16,14,.45);display:grid;place-items:center;padding:16px}
+.sheet{background:var(--chrome);border:1px solid var(--chrome-line);border-radius:10px;width:min(620px,100%);padding:22px;display:flex;flex-direction:column;gap:12px;max-height:100%;overflow:auto;box-sizing:border-box}
+.sheet h2{margin:0;font-family:var(--f-doc);font-size:21px}
+.sheet p{margin:0;color:var(--ink-2);line-height:1.5;max-width:65ch}
+.sheet textarea{width:100%;box-sizing:border-box;min-height:200px;font-family:var(--f-mono);font-size:12.5px;padding:10px;border:1px solid var(--chrome-line);border-radius:6px;background:var(--paper);resize:vertical}
+.sheet .acts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center}
+.sheet .acts .linkbtn{margin-right:auto}
+.tagrows{display:flex;flex-direction:column}
+.tagrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--chrome-line)}
+.tagrow input{border:1px solid transparent;background:none;border-radius:6px;padding:4px 6px;font-size:14px}
+.tagrow input:hover{border-color:var(--chrome-line)} .tagrow input:focus{border-color:var(--accent);outline:none;background:var(--paper)}
+.tagrow .k{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tagrow select{font-size:12px;max-width:130px}
+.tagrow .x{border:0;background:none;color:var(--ink-2);font-size:16px}
+.tagrow .x:hover{color:var(--bad)}
+.toast{position:fixed;left:50%;bottom:56px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:7px 14px;border-radius:7px;font-size:13px;z-index:70;pointer-events:none}
+.toast button{pointer-events:auto;margin-left:14px;border:0;background:none;padding:0;color:var(--paper);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(430px,100%);z-index:40;display:flex;flex-direction:column;background:var(--chrome);border-left:1px solid var(--chrome-line);box-shadow:-14px 0 34px rgba(0,0,0,.12)}
+.qc-head{padding:18px 18px 12px;border-bottom:1px solid var(--chrome-line);display:flex;flex-direction:column;gap:10px}
+.qc-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.qc-head h2{margin:0;font-family:var(--f-caps);font-weight:400;font-size:27px;letter-spacing:.05em;line-height:1}
+.qc-intro{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.qc-progress{height:6px;border-radius:3px;background:var(--paper);overflow:hidden}
+.qc-progress div{height:100%;width:0;background:var(--accent);transition:width .2s}
+.qc-count{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.qc-body{flex:1;overflow:auto;padding:6px 18px 28px}
+.qc-sec{padding-top:16px}
+.qc-sec h3{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.qc-sec h3 span{color:var(--ink-2);font-weight:500;letter-spacing:.02em}
+.qc-item{display:grid;grid-template-columns:20px minmax(0,1fr);gap:2px 8px;padding:9px 0;border-top:1px solid var(--chrome-line);cursor:pointer}
+.qc-item input{margin:2px 0 0;width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.qc-item .t{font-size:13.5px;font-weight:600;line-height:1.35}
+.qc-item .tip{grid-column:2;font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.qc-item .auto{grid-column:2;margin-top:3px}
+.qc-item.done .t{color:var(--ink-2)}
+.pill{display:inline-block;font-size:11px;font-weight:600;border:1px solid currentColor;border-radius:20px;padding:0 7px;line-height:17px;background:none;white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.bad{color:var(--warn)}
+button.pill{cursor:pointer;font-family:inherit}
+#qcBtn[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
+@media (max-width:860px){.ogrid{grid-template-columns:minmax(0,1fr)} .md{position:static;max-height:none} .doc{padding:24px 18px} .hint{display:none} .sheetpg{padding:22px 16px}}
+@media (max-width:760px){
+  .tt thead{display:none}
+  .tt,.tt tbody,.tt tr,.tt td{display:block;width:auto}
+  .tt tr{padding:6px 0;border-bottom:1px solid var(--chrome-line)}
+  .tt td{border:0;padding:3px 0}
+}
+@media (max-width:560px){.brand{font-size:22px} select.btn{max-width:150px} .bar .lbl{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+body.no-anim *{transition:none!important}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">Mindmap <span>Studio</span><small id="appVersion" class="ver"></small></div>
+    <div class="grp">
+      <select id="picker" class="btn" aria-label="Choose a map"></select>
+      <button id="newMap" class="btn" title="Start a new map">New</button>
+      <button id="delMap" class="btn danger" title="Delete this map">Delete</button>
+    </div>
+    <div class="grp">
+      <span class="lbl">Step</span>
+      <div class="seg steps" role="group" aria-label="Step">
+        <button data-step="map" aria-pressed="true"><span class="no">1</span>Map</button>
+        <span class="chev" aria-hidden="true">›</span>
+        <button data-step="tasks" aria-pressed="false"><span class="no">2</span>Tasks</button>
+        <span class="chev" aria-hidden="true">›</span>
+        <button data-step="board" aria-pressed="false"><span class="no">3</span>Board</button>
+      </div>
+    </div>
+    <div class="grp map-only">
+      <span class="lbl">View</span>
+      <div class="seg" role="group" aria-label="View">
+        <button data-mode="sketch" aria-pressed="true">Sketch</button>
+        <button data-mode="outline" aria-pressed="false">Outline</button>
+      </div>
+    </div>
+    <div class="grp map-only">
+      <span class="lbl">Colour</span>
+      <div class="seg" role="group" aria-label="Colour">
+        <button data-colour="on" aria-pressed="true">On</button>
+        <button data-colour="off" aria-pressed="false">Off</button>
+      </div>
+    </div>
+    <div class="grp map-only">
+      <span class="lbl">Simplify</span>
+      <div class="seg" role="group" aria-label="Simplify">
+        <button data-simplify="on" aria-pressed="false">On</button>
+        <button data-simplify="off" aria-pressed="true">Off</button>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="grp">
+      <button id="undo" class="btn icon" title="Undo (⌘Z)" aria-label="Undo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5 2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8h-3"/></svg></button>
+      <button id="redo" class="btn icon" title="Redo (⇧⌘Z)" aria-label="Redo"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8h3"/></svg></button>
+      <button id="filterBtn" class="btn" aria-expanded="false" aria-controls="fbar">Filter</button>
+      <button id="qcBtn" class="btn" aria-expanded="false" aria-controls="qc">Hints &amp; checks</button>
+      <button id="openBtn" class="btn" title="Open a saved map, or paste an outline">Open</button>
+      <button id="saveBtn" class="btn" title="Save this map as a .mindmap.json file">Save</button>
+      <button id="copyMd" class="btn map-only">Copy Markdown</button>
+      <div class="menu-wrap">
+        <button id="exportBtn" class="btn primary" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenu"><span class="txt">Export</span><svg class="caret" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button>
+        <div id="exportMenu" class="menu" role="menu" hidden></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Filter bar: Tags, People and Status checklists. One filter per map, used on every step. -->
+  <div id="fbar" class="fbar" hidden>
+    <span class="lbl">Filter</span>
+    <div class="menu-wrap"><button class="btn" data-fk="tags">Tags</button></div>
+    <div class="menu-wrap"><button class="btn" data-fk="people">People</button></div>
+    <div class="menu-wrap"><button class="btn" data-fk="status">Status</button></div>
+    <span id="fsum" class="fsum"></span>
+    <button id="fClear" class="linkbtn">Clear</button>
+    <button id="fTags" class="linkbtn">Manage tags…</button>
+  </div>
+
+  <main>
+    <div id="stage" class="stage" role="tree" aria-label="Mind map. Tab to a node, then use the arrow keys to move and Enter to edit.">
+      <div id="world" class="world"><svg id="wires" class="wires" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      <div class="zoom">
+        <button id="zOut" class="btn icon" aria-label="Zoom out">−</button>
+        <button id="zFit" class="btn">Fit</button>
+        <button id="zIn" class="btn icon" aria-label="Zoom in">+</button>
+      </div>
+    </div>
+    <div id="outline" class="page" hidden>
+      <div class="ogrid">
+        <div id="doc" class="doc"></div>
+        <aside class="md">
+          <header><span class="lbl">Markdown</span><button id="copyMd2" class="btn">Copy</button></header>
+          <pre id="mdsrc"></pre>
+        </aside>
+      </div>
+    </div>
+    <div id="tasks" class="page" hidden></div>
+    <div id="board" class="page" hidden></div>
+  </main>
+
+  <footer class="foot">
+    <span id="stats" class="stats"></span>
+    <span id="hint" class="hint"></span>
+    <span id="sync" class="sync">Saved in this browser</span>
+  </footer>
+</div>
+
+<!-- Open dialog: choose a file, or paste any outline. -->
+<div id="opener" class="overlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="opTitle">
+    <h2 id="opTitle">Open a map</h2>
+    <p>Open a <strong>.mindmap.json</strong> file and the map comes back exactly as you left it. Markdown files work too. You can also drop a file anywhere on the page.</p>
+    <div><button id="opFile" class="btn primary">Choose a file…</button></div>
+    <input id="fileIn" type="file" accept=".json,.md,.markdown,.txt,application/json,text/markdown,text/plain" hidden>
+    <p>Or paste Markdown or any indented list. The first heading or top line becomes the centre topic, indentation sets the levels, and numbers at the start of lines are dropped.</p>
+    <textarea id="opText" spellcheck="false" placeholder="# Plan the launch&#10;- Product&#10;  - [ ] Finish the beta&#10;- Marketing"></textarea>
+    <div class="acts">
+      <button id="opExample" class="linkbtn">Load the example</button>
+      <button id="opCancel" class="btn">Cancel</button>
+      <button id="opReplace" class="btn">Replace this map</button>
+      <button id="opNew" class="btn primary">Import as new map</button>
+    </div>
+  </div>
+</div>
+
+<aside id="qc" class="drawer" hidden aria-labelledby="qcTitle">
+  <header class="qc-head">
+    <div class="qc-top">
+      <h2 id="qcTitle">Hints &amp; checks</h2>
+      <button id="qcClose" class="btn icon" aria-label="Close checklist">×</button>
+    </div>
+    <p class="qc-intro">Work through these before you share the map. Items marked <span class="pill ok">Looks fine</span> or <span class="pill bad">Check</span> are checked by the app; click a <em>Check</em> to jump to it.</p>
+    <div class="qc-progress"><div id="qcBar"></div></div>
+    <div class="qc-count"><span id="qcCount"></span><button id="qcReset" class="linkbtn">Clear ticks</button></div>
+  </header>
+  <div id="qcBody" class="qc-body"></div>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script>
+(() => {
+"use strict";
+// Overview
+// - State: `store` holds every map and `M` is the map on screen. A map is
+//   { id, title, updated, view, tags: [{ id, name }], root, qc }. Every node is
+//   { id, text, children, tags: [tagId], collapsed?, task?: { status, people, due } }, and main branches
+//   (the centre's children) also carry side ("auto" | "left" | "right") and colour (a palette name).
+// - Every change to the map goes through mutate(fn): it snapshots the map for undo, runs fn, then
+//   re-renders and schedules a save. The Map, Tasks and Board steps are three views of the same data.
+// - Positions, sides and clockwise order are never stored: they are worked out from the structure.
+// - Maps are saved to localStorage, and also to the user's Claude account when the page runs as an artifact.
+const $ = s => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
+// The app's version, shown after its name and on exported pages: raise the minor number for new
+// features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
+const APP_VERSION = "1.0";
+const FORMAT = 1;
+const TEST = /[?&]test\b/.test(location.search);   // ?test is used by tests/run.html and keeps its data apart
+const LS = TEST ? "mindmap-studio.test" : "mindmap-studio.v1", LS_F = LS + ".filters";
+const PALETTE = ["teal", "blue", "violet", "plum", "ochre", "moss", "coral", "slate"];
+const STATS = ["todo", "doing", "done"], STAT_TXT = { todo: "To do", doing: "Doing", done: "Done" };
+// Layout in px: gap from the centre to the main branches, gap between deeper columns, vertical gaps, outer margin.
+const HG0 = 74, HG = 46, VG = 12, VGM = 24, MARGIN = 60;
+const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const oneLine = s => String(s || "").replace(/\s+/g, " ").trim();
+// Today as YYYY-MM-DD in local time. tests/run.html freezes it through window.__msToday.
+const today = () => window.__msToday || new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${+d} ${MONTHS[+m - 1]}` + (y !== today().slice(0, 4) ? ` ${y}` : ""); };
+const overdue = n => !!(n.task && n.task.status !== "done" && n.task.due && n.task.due < today());
+
+/* ---------------- model ---------------- */
+const mk = (text = "", children = [], extra = {}) => ({ id: uid(), text, children, tags: [], ...extra });
+function blankMap() {
+  return { id: uid(), title: "", updated: Date.now(), view: { colour: true, simplify: false, mode: "sketch", step: "map" }, tags: [], root: mk(""), qc: {} };
+}
+// The worked example in SPEC.md section 18: "Open the Leeds store". Tests rely on its figures.
+function exampleMap() {
+  const M0 = blankMap(), tag = {};
+  for (const name of ["legal", "suppliers", "equipment", "hiring", "marketing", "finance"]) { tag[name] = uid(); M0.tags.push({ id: tag[name], name }); }
+  const N = (text, kids = [], t) => {
+    const n = mk(text, kids);
+    if (t) { n.task = { status: t[0], people: t[1] ? t[1].split(",") : [], due: t[2] || "" }; n.tags = (t[3] || "").split(",").filter(Boolean).map(x => tag[x]); }
+    return n;
+  };
+  const main = (text, colour, kids) => Object.assign(N(text, kids), { side: "auto", colour });
+  M0.root = N("Open the Leeds store", [
+    main("Premises", "teal", [
+      N("Sign the lease", [], ["done", "Sam", "2026-10-20", "legal"]),
+      N("Fit-out", [
+        N("Choose a fit-out contractor", [], ["doing", "Alex", "2026-11-12", "suppliers"]),
+        N("Order the coffee machine", [], ["todo", "Alex", "2026-11-28", "suppliers,equipment"])]),
+      N("Licences", [N("Food hygiene registration", [], ["todo", "Priya", "2026-11-01", "legal"])])]),
+    main("People", "blue", [
+      N("Hire a store manager", [], ["doing", "Priya,Sam", "2026-11-20", "hiring"]),
+      N("Baristas", [N("Advertise four barista roles", [], ["todo", "Priya", "2026-12-01", "hiring"])]),
+      N("Training plan")]),
+    main("Launch marketing", "violet", [
+      N("Local press", [N("Write the press release", [], ["todo", "Jo", "2026-12-05", "marketing"])]),
+      N("Opening-week offer", [], ["todo", "", "", "marketing"]),
+      Object.assign(N("Social media ideas", [N("Behind the scenes of the fit-out"), N("Meet the team")]), { collapsed: true })]),
+    main("Money", "coral", [
+      N("Agree the opening budget", [], ["done", "Sam", "2026-10-15", "finance"]),
+      N("Cash flow for the first three months")]),
+  ]);
+  M0.title = M0.root.text;
+  return M0;
+}
+
+let store = loadLocal() || { maps: {}, current: null, deleted: {} };
+if (!store.maps || !Object.keys(store.maps).length) { const m = blankMap(); store = { maps: { [m.id]: m }, current: m.id, deleted: store.deleted || {} }; }
+store.deleted ||= {};
+if (!store.maps[store.current]) store.current = newestId();
+let M = store.maps[store.current];
+normalise(M);
+function newestId() { return Object.values(store.maps).sort((a, b) => b.updated - a.updated)[0]?.id; }
+function loadLocal() { try { return JSON.parse(localStorage.getItem(LS)); } catch { return null; } }
+function saveLocal() { try { localStorage.setItem(LS, JSON.stringify(store)); return true; } catch { return false; } }
+
+// Bring any map (saved, opened or synced) into shape: defaults for missing fields, tags that exist,
+// main-branch fields only on main branches. Unknown fields are left alone so they survive a save.
+function normalise(m) {
+  m.view = Object.assign({ colour: true, simplify: false, mode: "sketch", step: "map" }, m.view || {});
+  m.tags = (Array.isArray(m.tags) ? m.tags : []).filter(t => t && t.id && typeof t.name === "string");
+  m.qc ||= {};
+  if (!m.root || typeof m.root !== "object") m.root = mk("");
+  const known = new Set(m.tags.map(t => t.id)), seen = new Set();
+  (function fix(n, d) {
+    if (!n.id || seen.has(n.id)) n.id = uid();
+    seen.add(n.id);
+    n.text = typeof n.text === "string" ? n.text : String(n.text ?? "");
+    n.children = Array.isArray(n.children) ? n.children.filter(c => c && typeof c === "object") : [];
+    n.tags = [...new Set((Array.isArray(n.tags) ? n.tags : []).filter(t => known.has(t)))];
+    if (n.task) {
+      const t = n.task;
+      n.task = { ...t, status: STATS.includes(t.status) ? t.status : "todo", people: Array.isArray(t.people) ? t.people.map(oneLine).filter(Boolean) : [],
+        due: /^\d{4}-\d{2}-\d{2}$/.test(t.due || "") ? t.due : "" };
+    }
+    if (d === 0) delete n.task;
+    if (d !== 1) { delete n.side; delete n.colour; }
+    n.children.forEach(c => fix(c, d + 1));
+  })(m.root, 0);
+  fixMains(m);
+  m.title = oneLine(m.root.text);
+  return m;
+}
+// Main branches always have a side and a colour. A new or "auto" colour takes the first palette colour
+// no other branch uses; once all eight are taken the palette repeats.
+function fixMains(m = M) {
+  const mains = m.root.children;
+  for (const n of mains) {
+    if (!["auto", "left", "right"].includes(n.side)) n.side = "auto";
+    if (!PALETTE.includes(n.colour)) n.colour = nextColour(mains.filter(x => x !== n && PALETTE.includes(x.colour)));
+  }
+}
+function nextColour(others) {
+  const used = new Set(others.map(x => x.colour));
+  return PALETTE.find(c => !used.has(c)) || PALETTE[others.length % PALETTE.length];
+}
+
+/* ---------------- queries ---------------- */
+// An index of the map, rebuilt whenever the model changes (ver counts changes): each node's parent,
+// depth, main branch and side, plus the main branches in clockwise reading order.
+let ver = 0, IX = null;
+function index() {
+  if (IX && IX.ver === ver && IX.root === M.root) return IX;
+  const mains = M.root.children, n = mains.length;
+  const fixedR = mains.filter(x => x.side === "right").length;
+  let need = Math.max(0, Math.ceil(n / 2) - fixedR);
+  const side = new Map();
+  for (const x of mains) side.set(x.id, x.side === "right" ? "r" : x.side === "left" ? "l" : need-- > 0 ? "r" : "l");
+  const right = mains.filter(x => side.get(x.id) === "r"), left = mains.filter(x => side.get(x.id) === "l");
+  const map = new Map();
+  (function w(node, p, d, main) {
+    map.set(node.id, { n: node, p, d, main, side: main ? side.get(main.id) : null });
+    node.children.forEach(c => w(c, node, d + 1, d === 0 ? c : main));
+  })(M.root, null, 0, null);
+  return (IX = { ver, root: M.root, map, right, left, clockwise: [...right, ...left] });
+}
+const find = id => index().map.get(id);
+const touchModel = () => { ver++; };
+function walk(n, fn, d = 0, p = null) { fn(n, d, p); n.children.forEach(c => walk(c, fn, d + 1, n)); }
+const isAnc = (a, id) => { for (let f = find(id); f; f = f.p && find(f.p.id)) if (f.n.id === a) return true; return false; };
+const ancestors = id => { const out = []; for (let f = find(id); f && f.p; f = find(f.p.id)) out.unshift(f.p); return out; };
+const countNodes = () => index().map.size;
+// Every task in clockwise map order: each main branch, then its sub-nodes depth first.
+function allTasks() { const out = []; for (const m of index().clockwise) walk(m, n => { if (n.task) out.push(n); }); return out; }
+const tagById = id => M.tags.find(t => t.id === id);
+const tagName = id => tagById(id)?.name || "";
+function tagCounts(m = M) { const c = {}; walk(m.root, n => n.tags.forEach(t => c[t] = (c[t] || 0) + 1)); return c; }
+const colourOf = id => find(id)?.main?.colour;
+const peopleIn = m => { const s = new Map(); walk(m.root, n => n.task?.people.forEach(p => { if (!s.has(p.toLowerCase())) s.set(p.toLowerCase(), p); })); return [...s.values()]; };
+const allPeople = () => { const s = new Map(); for (const m of Object.values(store.maps)) for (const p of peopleIn(m)) if (!s.has(p.toLowerCase())) s.set(p.toLowerCase(), p); return [...s.values()].sort(); };
+
+/* ---------------- tag names ---------------- */
+// Tags are matched ignoring case and extra spaces. near() flags names that are probably the same tag:
+// equal without spaces, hyphens and underscores; a plural ("s" or "es"); or two edits apart (5+ letters).
+const tnorm = s => oneLine(s).replace(/^#+/, "");
+const tkey = s => tnorm(s).toLowerCase();
+function lev(a, b) {
+  const v = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = v[0]; v[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = v[j]; v[j] = Math.min(v[j] + 1, v[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+  }
+  return v[b.length];
+}
+function near(a, b) {
+  a = tkey(a); b = tkey(b);
+  if (!a || !b || a === b) return false;
+  const s = x => x.replace(/[\s\-_]/g, "");
+  if (s(a) === s(b)) return true;
+  if (a + "s" === b || b + "s" === a || a + "es" === b || b + "es" === a) return true;
+  return Math.min(a.length, b.length) >= 5 && lev(a, b) <= 2;
+}
+const findTag = name => M.tags.find(t => tkey(t.name) === tkey(name));
+
+/* ---------------- undo + mutate ---------------- */
+// Undo keeps snapshots of the map's content (not its view settings), for this session and this map.
+let undoStack = [], redoStack = [];
+const snap = () => JSON.stringify({ root: M.root, tags: M.tags, qc: M.qc });
+function restore(s) { const o = JSON.parse(s); M.root = o.root; M.tags = o.tags; M.qc = o.qc; touchModel(); }
+function pushUndo(s = snap()) { undoStack.push(s); if (undoStack.length > 200) undoStack.shift(); redoStack = []; }
+function touch() { M.title = oneLine(M.root.text); M.updated = Date.now(); touchModel(); scheduleSave(); }
+function mutate(fn) {
+  pushUndo();
+  const r = fn();
+  fixMains(); touch(); render();
+  return r;
+}
+function undo() { commitEdit(); if (!undoStack.length) return; redoStack.push(snap()); restore(undoStack.pop()); afterHistory(); }
+function redo() { commitEdit(); if (!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); afterHistory(); }
+function afterHistory() { if (selected && !find(selected)) selected = null; touch(); render(); }
+
+/* ---------------- structural edits ---------------- */
+// Each returns the id to select afterwards (or nothing). Callers wrap them in mutate().
+const ops = {
+  add(parentId, at, props = {}) {
+    const p = find(parentId).n, n = mk("", [], props);
+    if (p.collapsed) p.collapsed = false;
+    if (p === M.root) Object.assign(n, { side: props.side || "auto", colour: nextColour(p.children) });
+    p.children.splice(at ?? p.children.length, 0, n);
+    touchModel(); return n.id;
+  },
+  child(id) { return ops.add(id); },
+  sibling(id) {
+    const f = find(id); if (!f.p) return ops.child(id);
+    return ops.add(f.p.id, f.p.children.indexOf(f.n) + 1, f.p === M.root && f.n.side !== "auto" ? { side: f.n.side } : {});
+  },
+  del(id) {
+    const f = find(id); if (!f || !f.p) return;
+    const a = f.p.children, i = a.indexOf(f.n); a.splice(i, 1); touchModel();
+    return f.p.id;
+  },
+  // Move a node under a new parent at an index; refuses to move a node into its own sub-branch.
+  moveTo(id, parentId, at) {
+    const f = find(id); if (!f || !f.p || id === parentId || isAnc(id, parentId)) return;
+    const from = f.p.children, i = from.indexOf(f.n), to = find(parentId).n;
+    from.splice(i, 1);
+    if (from === to.children && at > i) at--;
+    to.children.splice(Math.max(0, Math.min(at, to.children.length)), 0, f.n);
+    if (to !== M.root) { delete f.n.side; delete f.n.colour; }
+    else if (f.p !== M.root) { f.n.side = "auto"; f.n.colour = nextColour(to.children.filter(x => x !== f.n)); }
+    if (to.collapsed) to.collapsed = false;
+    touchModel(); return id;
+  },
+  indent(id) {   // become the last child of the sibling before it (Outline Tab)
+    const f = find(id); if (!f?.p) return;
+    const sibs = f.p === M.root ? index().clockwise : f.p.children, prev = sibs[sibs.indexOf(f.n) - 1];
+    if (!prev) return;
+    return ops.moveTo(id, prev.id, prev.children.length);
+  },
+  outdent(id) {  // become the sibling after its parent, one level towards the centre
+    const f = find(id); if (!f?.p || f.p === M.root) return;
+    const g = find(f.p.id), gp = g.p, side = g.side;
+    ops.moveTo(id, gp.id, gp.children.indexOf(f.p) + 1);
+    if (gp === M.root) f.n.side = side === "l" ? "left" : "right";
+    return id;
+  },
+  // Swap with the neighbour above or below as drawn (main branches only swap within their side).
+  moveVisual(id, dir, order) {
+    const f = find(id); if (!f?.p) return;
+    const sibs = order(f), i = sibs.indexOf(f.n), other = sibs[i + dir]; if (!other) return;
+    const a = f.p.children, x = a.indexOf(f.n), y = a.indexOf(other); [a[x], a[y]] = [a[y], a[x]];
+    touchModel(); return id;
+  },
+  setSide(id, side) { const f = find(id); if (f?.p === M.root) { f.n.side = side; touchModel(); } return id; },
+};
+// Task details kept for this session when a task is turned back into a plain node, so it can come back.
+const parked = new Map();
+function setTask(id, on) {
+  const n = find(id)?.n; if (!n || n === M.root) return;
+  if (on && !n.task) n.task = parked.get(id) || { status: "todo", people: [], due: "" };
+  else if (!on && n.task) { parked.set(id, n.task); delete n.task; }
+}
+const toggleTask = id => { const n = find(id)?.n; if (n && n !== M.root) mutate(() => setTask(id, !n.task)); else hint("The centre topic can’t be a task"); };
+const setStatus = (id, s) => mutate(() => { const n = find(id).n; if (n.task) n.task.status = s; });
+const tick = id => { const n = find(id)?.n; if (!n?.task) return hint("Press Alt+T to make it a task first"); setStatus(id, n.task.status === "done" ? "todo" : "done"); };
+const cycleStatus = id => { const t = find(id).n.task; setStatus(id, STATS[(STATS.indexOf(t.status) + 1) % 3]); };
+function createTag(name) { const t = { id: uid(), name: tnorm(name) }; M.tags.push(t); return t.id; }
+const addTag = (id, tagId) => { const n = find(id).n; if (!n.tags.includes(tagId)) n.tags.push(tagId); };
+const removeTag = (id, tagId) => mutate(() => { const n = find(id).n; n.tags = n.tags.filter(t => t !== tagId); });
+const tagOps = {
+  rename(id, name) { tagById(id).name = tnorm(name); },
+  merge(from, into) { walk(M.root, n => { if (n.tags.includes(from)) n.tags = [...new Set(n.tags.map(t => t === from ? into : t))]; }); M.tags = M.tags.filter(t => t.id !== from); },
+  remove(id) { walk(M.root, n => n.tags = n.tags.filter(t => t !== id)); M.tags = M.tags.filter(t => t.id !== id); },
+};
+
+/* ---------------- filter ---------------- */
+// One filter per map, remembered in this browser only: sets of tag ids, people and statuses.
+// Within a set any choice matches; across sets all must. People and status only match tasks.
+let F = loadFilter();
+function loadFilter() {
+  try { const o = (JSON.parse(localStorage.getItem(LS_F)) || {})[M.id] || {}; return { tags: new Set(o.tags), people: new Set(o.people), status: new Set(o.status) }; }
+  catch { return { tags: new Set(), people: new Set(), status: new Set() }; }
+}
+function saveFilter() {
+  try { const all = JSON.parse(localStorage.getItem(LS_F)) || {}; all[M.id] = { tags: [...F.tags], people: [...F.people], status: [...F.status] }; localStorage.setItem(LS_F, JSON.stringify(all)); } catch {}
+}
+const fCount = () => F.tags.size + F.people.size + F.status.size;
+const fActive = () => fCount() > 0 && !exporting;
+function matches(n) {
+  if (F.tags.size && !n.tags.some(t => F.tags.has(t))) return false;
+  if (F.people.size && !(n.task && n.task.people.some(p => F.people.has(p.toLowerCase())))) return false;
+  if (F.status.size && !(n.task && (F.status.has(n.task.status) || (F.status.has("overdue") && overdue(n))))) return false;
+  return true;
+}
+// The nodes left at full strength on the map: every match plus its ancestors.
+function keepSet() {
+  const keep = new Set(), hit = new Set();
+  walk(M.root, n => { if (matches(n)) { hit.add(n.id); keep.add(n.id); ancestors(n.id).forEach(a => keep.add(a.id)); } });
+  return { keep, hit };
+}
+const shownTasks = () => fActive() ? allTasks().filter(matches) : allTasks();
+function setFilter(kind, value, on) {
+  const s = F[kind]; (on ?? !s.has(value)) ? s.add(value) : s.delete(value);
+  saveFilter(); render();
+}
+function quickFilter(kind, value) { F[kind].add(value); saveFilter(); openFilterBar(true); render(); }
+
+/* ---------------- render ---------------- */
+// Draw whatever is on screen: toolbar state, footer and the current step (Map in Sketch or Outline, Tasks, Board).
+let selected = null, editing = null, exporting = false;
+const step = () => M.view.step, mode = () => M.view.mode;
+function render() {
+  const b = document.body;
+  b.dataset.step = step(); b.dataset.colour = M.view.colour ? "on" : "off"; b.dataset.simplify = M.view.simplify ? "on" : "off";
+  document.querySelectorAll("[data-step]").forEach(x => x.tagName === "BUTTON" && x.setAttribute("aria-pressed", x.dataset.step === step()));
+  document.querySelectorAll("[data-mode]").forEach(x => x.setAttribute("aria-pressed", x.dataset.mode === mode()));
+  document.querySelectorAll("button[data-colour]").forEach(x => x.setAttribute("aria-pressed", (x.dataset.colour === "on") === M.view.colour));
+  document.querySelectorAll("button[data-simplify]").forEach(x => x.setAttribute("aria-pressed", (x.dataset.simplify === "on") === M.view.simplify));
+  $("#undo").disabled = !undoStack.length; $("#redo").disabled = !redoStack.length;
+  const fc = fCount(); $("#filterBtn").textContent = fc ? `Filter · ${fc}` : "Filter"; $("#filterBtn").classList.toggle("on", !!fc);
+  const onMap = step() === "map";
+  $("#stage").hidden = !(onMap && mode() === "sketch"); $("#outline").hidden = !(onMap && mode() === "outline");
+  $("#tasks").hidden = step() !== "tasks"; $("#board").hidden = step() !== "board";
+  if (onMap && mode() === "sketch") renderSketch();
+  else if (onMap) renderOutline();
+  else if (step() === "tasks") renderTasks();
+  else renderBoard();
+  renderFilterBar(); renderPicker(); renderFoot();
+  if (!$("#qc").hidden) renderQC();
+}
+function renderFoot() {
+  const t = allTasks(), done = t.filter(n => n.task.status === "done").length, od = t.filter(overdue).length, nn = countNodes();
+  $("#stats").innerHTML = `${nn} node${nn === 1 ? "" : "s"} · ${t.length} task${t.length === 1 ? "" : "s"} · ${done} done` + (od ? ` · <span class="od">${od} overdue</span>` : "");
+  if (!hintLock) $("#hint").innerHTML = ({
+    map: mode() === "sketch" ? "<kbd>Enter</kbd> sibling · <kbd>Tab</kbd> child · <kbd>Alt+T</kbd> task · right-click for more" : "<kbd>Enter</kbd> sibling · <kbd>Tab</kbd> indent · <kbd>Alt+T</kbd> task",
+    tasks: "Click a status to change it · <kbd>Tab</kbd> moves between cells",
+    board: "Drag cards between columns · <kbd>Space</kbd> ticks the selected card" })[step()];
+}
+let hintLock = 0;
+function hint(s) { $("#hint").textContent = s; clearTimeout(hintLock); hintLock = setTimeout(() => { hintLock = 0; renderFoot(); }, 3500); }
+let toastT;
+function toast(msg, action) {
+  document.querySelector(".toast")?.remove(); clearTimeout(toastT);
+  const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg;
+  if (action) { const b = document.createElement("button"); b.textContent = action.label; b.onclick = () => { t.remove(); action.run(); }; t.appendChild(b); }
+  document.body.appendChild(t); toastT = setTimeout(() => t.remove(), action ? 7000 : 2600);
+}
+
+/* ---------------- sketch: nodes ---------------- */
+const stage = $("#stage"), world = $("#world"), svg = $("#wires");
+const els = new Map();   // node id → element, reused between renders so editing keeps its focus
+let pos = {}, bounds = { w: 0, h: 0 }, vp = { x: 0, y: 0, k: 1 }, fitted = null;
+function visibleNodes() { const out = []; (function w(n) { out.push(n); if (!n.collapsed) n.children.forEach(w); })(M.root); return out; }
+function nodeEl(n) {
+  let el = els.get(n.id);
+  if (!el) {
+    el = document.createElement("div"); el.className = "node"; el.dataset.id = n.id; el.setAttribute("role", "treeitem");
+    el.innerHTML = `<div class="tx"><span class="cb" data-act="tick" aria-hidden="true"></span><span class="txt"></span></div><div class="meta"></div><button class="more" data-act="fold" hidden></button><button class="addc" data-act="child" title="Add a child (Tab)" aria-label="Add a child">+</button><div class="tools"></div>`;
+    world.appendChild(el); els.set(n.id, el);
+  }
+  return el;
+}
+function toolsHtml(n, f) {
+  if (!f.p) return `<button data-act="child" title="Enter or Tab">+ Branch</button>`;
+  return `<button data-act="child" title="Tab">+ Child</button><button data-act="sibling" title="Enter">+ Sibling</button>` +
+    (n.task ? `<button data-act="details">Details</button>` : `<button data-act="task" title="Alt+T">Task</button>`) +
+    `<button data-act="tag">Tag</button>` + (n.children.length ? `<button data-act="fold">${n.collapsed ? "Unfold" : "Fold"}</button>` : "") + `<button data-act="delete" class="del">Delete</button>`;
+}
+function metaHtml(n) {
+  const out = [];
+  if (n.task?.due) out.push(`<span class="dt${overdue(n) ? " od" : ""}" data-act="details">${overdue(n) ? "Overdue · " : ""}${fmtDate(n.task.due)}</span>`);
+  if (n.task?.people.length) out.push(`<span data-act="details">${esc(n.task.people.join(", "))}</span>`);
+  for (const t of n.tags) out.push(`<span class="tg" data-act="ftag" data-tag="${t}">#${esc(tagName(t))}</span>`);
+  return out.join("");
+}
+function renderSketch() {
+  const vis = visibleNodes(), live = new Set(vis.map(n => n.id)), ks = fActive() ? keepSet() : null;
+  for (const [id, el] of els) if (!live.has(id)) { el.remove(); els.delete(id); }
+  for (const n of vis) {
+    const f = find(n.id), el = nodeEl(n), side = f.side || "r";
+    const cls = `node ${f.d === 0 ? "root" : f.d === 1 ? "main" : ""} ${side}${n.task ? " task t-" + n.task.status : ""}${selected === n.id ? " sel" : ""}${editing === n.id ? " editing" : ""}${n.collapsed && n.children.length ? " folded" : ""}${ks && !ks.keep.has(n.id) ? " dim" : ""}`;
+    if (el.className !== cls) el.className = cls;
+    el.style.setProperty("--c", f.main ? `var(--b-${f.main.colour})` : "var(--ink)");
+    const txt = el.querySelector(".txt");
+    if (editing !== n.id && txt.textContent !== n.text) txt.textContent = n.text;
+    txt.dataset.ph = f.d === 0 ? "What’s on your mind?" : f.d === 1 ? "Main branch" : "Idea";
+    const mh = metaHtml(n); if (el._mh !== mh) { el.querySelector(".meta").innerHTML = mh; el._mh = mh; }
+    const th = toolsHtml(n, f); if (el._th !== th) { el.querySelector(".tools").innerHTML = th; el._th = th; }
+    const more = el.querySelector(".more");
+    if (n.collapsed && n.children.length) {
+      let c = 0, t = 0, hit = false; n.children.forEach(k => walk(k, x => { c++; if (x.task) t++; if (ks?.hit.has(x.id)) hit = true; }));
+      more.hidden = false; more.textContent = `+${c}${t ? ` · ${t} task${t > 1 ? "s" : ""}` : ""}`; more.classList.toggle("hit", hit);
+      more.title = "Unfold";
+    } else more.hidden = true;
+  }
+  layout();
+}
+// Lay the map out: measure every node, size each sub-branch, stack main branches on their side of the
+// centre (right top to bottom, left bottom to top, so the map reads clockwise), then shift into view.
+function layout() {
+  const ix = index(), size = {};
+  for (const [id, el] of els) size[id] = { w: el.offsetWidth, h: el.offsetHeight };
+  const H = {};
+  const sub = n => { const kids = n.collapsed ? [] : n.children; const s = kids.reduce((a, c) => a + sub(c), 0) + VG * Math.max(0, kids.length - 1); return (H[n.id] = Math.max(size[n.id]?.h || 30, s)); };
+  const P = {};
+  const place = (n, edge, top, side) => {   // edge: the x of the side facing the parent
+    const s = size[n.id] || { w: 80, h: 30 }, x = side === "r" ? edge : edge - s.w;
+    P[n.id] = { x, y: top + (H[n.id] - s.h) / 2, w: s.w, h: s.h };
+    if (n.collapsed) return;
+    const block = n.children.reduce((a, c) => a + H[c.id], 0) + VG * Math.max(0, n.children.length - 1);
+    let y = top + (H[n.id] - block) / 2;
+    for (const c of n.children) { place(c, side === "r" ? x + s.w + HG : x - HG, y, side); y += H[c.id] + VG; }
+  };
+  const r0 = size[M.root.id] || { w: 200, h: 60 };
+  P[M.root.id] = { x: -r0.w / 2, y: -r0.h / 2, w: r0.w, h: r0.h };
+  if (!M.root.collapsed) for (const [list, side] of [[ix.right, "r"], [[...ix.left].reverse(), "l"]]) {
+    list.forEach(sub);
+    const total = list.reduce((a, c) => a + H[c.id], 0) + VGM * Math.max(0, list.length - 1);
+    let y = -total / 2;
+    for (const c of list) { place(c, side === "r" ? r0.w / 2 + HG0 : -r0.w / 2 - HG0, y, side); y += H[c.id] + VGM; }
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of Object.values(P)) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + p.w); y1 = Math.max(y1, p.y + p.h); }
+  const dx = MARGIN - x0, dy = MARGIN - y0;
+  for (const p of Object.values(P)) { p.x += dx; p.y += dy; }
+  // keep the centre topic still on screen when the map grows on one side
+  const old = pos[M.root.id], nw = P[M.root.id];
+  if (old && fitted === M.id) { vp.x += (old.x - nw.x) * vp.k; vp.y += (old.y - nw.y) * vp.k; }
+  pos = P; bounds = { w: x1 - x0 + MARGIN * 2, h: y1 - y0 + MARGIN * 2 };
+  for (const [id, el] of els) { const p = P[id]; if (p) { el.style.left = p.x + "px"; el.style.top = p.y + "px"; } }
+  if (fitted !== M.id && stage.clientWidth) { fitted = M.id; fit(); } else applyVP();
+  animateInk();
+}
+// Ink follows the nodes while they glide to their new places.
+let inkUntil = 0, inkRaf = 0;
+function animateInk() {
+  inkUntil = performance.now() + (document.body.classList.contains("no-anim") ? 0 : 300);
+  if (!inkRaf) (function frame() { draw(); inkRaf = performance.now() < inkUntil ? requestAnimationFrame(frame) : 0; })();
+}
+
+/* ---------------- sketch: ink ---------------- */
+// Each node's box (filled with its task tint), its checkbox, and a curved line from its parent, all drawn
+// by Rough.js. Shapes are cached by geometry and colour, so only what moved is redrawn.
+let inkCache = new Map(), themeCache = null;
+function theme() {
+  if (!themeCache) {
+    const cs = getComputedStyle(document.documentElement), v = k => cs.getPropertyValue(k).trim();
+    themeCache = { ink: v("--ink"), hi: v("--hi"), todo: v("--task-todo"), doing: v("--task-doing"), done: v("--task-done") };
+    for (const c of PALETTE) themeCache[c] = v("--b-" + c);
+  }
+  return themeCache;
+}
+const seedOf = (id, k) => { let h = k; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 2e9 + 1; };
+const rr = (x, y, w, h, r) => `M${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x + r} Q${x},${y + h} ${x},${y + h - r} V${y + r} Q${x},${y} ${x + r},${y} Z`;
+function draw() {
+  if (step() !== "map" || mode() !== "sketch") return;
+  const th = theme(), R = window.rough ? rough.svg(svg) : null, next = new Map(), out = [];
+  const box = new Map();
+  for (const [id, el] of els) box.set(id, { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight, el });
+  const use = (key, make, dim) => {
+    let el = inkCache.get(key); if (!el) { el = make(); }
+    el.setAttribute("opacity", dim ? .25 : 1);
+    next.set(key, el); out.push(el);
+  };
+  const shape = (d, o) => {
+    if (R) return R.path(d, { roughness: .7, bowing: .5, ...o });
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d); p.setAttribute("fill", o.fill || "none"); p.setAttribute("stroke", o.stroke); p.setAttribute("stroke-width", o.strokeWidth || 1.4);
+    if (o.strokeLineDash) p.setAttribute("stroke-dasharray", o.strokeLineDash.join(" "));
+    return p;
+  };
+  const ks = fActive() ? keepSet() : null;
+  const colour = f => M.view.colour && f.main ? th[f.main.colour] : th.ink;
+  for (const n of visibleNodes()) {
+    const f = find(n.id), b = box.get(n.id); if (!b) continue;
+    const dim = ks && !ks.keep.has(n.id), stroke = f.d === 0 ? th.ink : colour(f), seed = seedOf(n.id, 3);
+    if (selected === n.id && R && !exporting) {
+      const g = [b.x - 5, b.y - 3, b.w + 10, b.h + 6];
+      use(`h|${g}|${th.hi}`, () => R.rectangle(...g, { fill: th.hi, fillStyle: "hachure", hachureGap: 3.5, fillWeight: 6, hachureAngle: -14, stroke: "none", seed, roughness: 1.5 }));
+    }
+    // the line from the parent
+    if (f.p) {
+      const q = box.get(f.p.id);
+      if (q) {
+        const right = f.side === "r", x1 = right ? q.x + q.w : q.x, y1 = q.y + q.h / 2, x2 = right ? b.x : b.x + b.w, y2 = b.y + b.h / 2, dx = x2 - x1;
+        const d = `M${x1},${y1} C${x1 + dx * .5},${y1} ${x2 - dx * .5},${y2} ${x2},${y2}`, sw = f.d === 1 ? 3 : f.d === 2 ? 1.9 : 1.35;
+        use(`l|${d}|${stroke}|${sw}`, () => shape(d, { stroke, strokeWidth: sw, seed: seedOf(n.id, 11), roughness: .5 }), dim);
+      }
+    }
+    // the box, filled with the task tint
+    const fill = n.task ? th[n.task.status] : null, d = rr(b.x, b.y, b.w, b.h, f.d === 0 ? 16 : 10), sw = f.d === 0 ? 2.2 : f.d === 1 ? 1.8 : 1.3;
+    use(`b|${d}|${stroke}|${fill}|${sw}`, () => shape(d, { stroke, strokeWidth: sw, seed, fill: fill || undefined, fillStyle: "solid", roughness: .8 }), dim);
+    // a dashed stub after a folded node
+    if (n.collapsed && n.children.length) {
+      const right = f.side !== "l", y = b.y + b.h / 2, xa = right ? b.x + b.w : b.x, xb = xa + (right ? 10 : -10);
+      use(`s|${xa},${y}|${stroke}`, () => shape(`M${xa},${y} L${xb},${y}`, { stroke, strokeWidth: 1.3, seed, strokeLineDash: [3, 3] }), dim);
+    }
+    // the checkbox: empty for to do, dashed for doing, ticked for done
+    if (n.task) {
+      const cb = b.el.querySelector(".cb"), cx = b.x + cb.offsetLeft, cy = b.y + cb.offsetTop;
+      const g = [cx, cy, 13, 13], st = n.task.status;
+      use(`c|${g}|${st}|${th.ink}`, () => {
+        const grp = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        grp.appendChild(shape(rr(cx, cy, 13, 13, 2.5), { stroke: th.ink, strokeWidth: 1.4, seed: seed + 1, roughness: .6, strokeLineDash: st === "doing" ? [2.5, 2.2] : undefined }));
+        if (st === "done") grp.appendChild(shape(`M${cx + 2.5},${cy + 6.5} L${cx + 5.5},${cy + 10} L${cx + 12},${cy + 1.5}`, { stroke: th.ink, strokeWidth: 2, seed: seed + 2, roughness: .4 }));
+        return grp;
+      }, dim);
+    }
+  }
+  inkCache = next;
+  svg.setAttribute("width", bounds.w); svg.setAttribute("height", bounds.h);
+  if (out.length !== svg.childNodes.length || out.some((el, i) => svg.childNodes[i] !== el)) svg.replaceChildren(...out);
+}
+
+/* ---------------- sketch: viewport ---------------- */
+function applyVP() { world.style.transform = `translate(${vp.x}px,${vp.y}px) scale(${vp.k})`; }
+function fit() {
+  const sw = stage.clientWidth, sh = stage.clientHeight; if (!sw || !bounds.w) return;
+  const k = Math.max(.25, Math.min(1.05, (sw - 30) / bounds.w, (sh - 30) / bounds.h));
+  vp = { k, x: (sw - bounds.w * k) / 2, y: (sh - bounds.h * k) / 2 }; applyVP();
+}
+function zoomAt(cx, cy, f) {
+  const k = Math.max(.2, Math.min(2.5, vp.k * f)); f = k / vp.k;
+  vp.x = cx - (cx - vp.x) * f; vp.y = cy - (cy - vp.y) * f; vp.k = k; applyVP();
+}
+function ensureVisible(id) {
+  const p = pos[id]; if (!p) return; const sw = stage.clientWidth, sh = stage.clientHeight, pad = 50;
+  const x1 = vp.x + p.x * vp.k, y1 = vp.y + p.y * vp.k, x2 = x1 + p.w * vp.k, y2 = y1 + p.h * vp.k;
+  if (x2 > sw - pad) vp.x -= x2 - (sw - pad); if (x1 < pad) vp.x += pad - x1;
+  if (y2 > sh - pad) vp.y -= y2 - (sh - pad); if (y1 < pad) vp.y += pad - y1;
+  applyVP();
+}
+stage.addEventListener("wheel", e => {
+  e.preventDefault(); const r = stage.getBoundingClientRect();
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * .01));
+  else { vp.x -= e.deltaX; vp.y -= e.deltaY; applyVP(); }
+}, { passive: false });
+$("#zIn").onclick = () => zoomAt(stage.clientWidth / 2, stage.clientHeight / 2, 1.2);
+$("#zOut").onclick = () => zoomAt(stage.clientWidth / 2, stage.clientHeight / 2, 1 / 1.2);
+$("#zFit").onclick = fit;
+
+/* ---------------- selection + editing ---------------- */
+function select(id) {
+  if (selected === id) return;
+  selected = id;
+  if (step() === "map") render();
+}
+function editNode(id) {
+  if (step() !== "map") return;
+  closePops();
+  if (mode() === "outline") { selected = id; render(); const t = document.querySelector(`.orow[data-id="${id}"] .otxt`); if (t) caretEnd(t); return; }
+  selected = id; editing = id; render();
+  const el = els.get(id); if (!el) return;
+  const t = el.querySelector(".txt");
+  try { t.contentEditable = "plaintext-only"; } catch { t.contentEditable = "true"; }
+  if (t.contentEditable !== "plaintext-only") t.contentEditable = "true";
+  editSnap = snap(); caretEnd(t); ensureVisible(id);
+}
+function caretEnd(t) {
+  t.focus({ preventScroll: true });
+  const r = document.createRange(); r.selectNodeContents(t); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+// Stop editing: the text has been saved as it was typed, so only the editing state is cleared.
+function commitEdit() {
+  if (!editing) return;
+  const el = els.get(editing); editing = null;
+  if (el) { const t = el.querySelector(".txt"); t.contentEditable = "false"; t.removeAttribute("contenteditable"); el.classList.remove("editing"); }
+  if (document.activeElement?.closest?.(".node")) document.activeElement.blur();
+}
+// Typing goes straight into the model. The first keystroke of an edit is one undo step for the whole edit.
+let editSnap = null;
+const readText = el => (el.innerText || "").replace(/\n$/, "").replace(/ /g, " ");
+function typed(id, text) {
+  const n = find(id)?.n; if (!n) return;
+  if (editSnap) { pushUndo(editSnap); editSnap = null; }
+  n.text = text; touch();
+  if (id === M.root.id) renderPicker();
+}
+world.addEventListener("focusin", e => { if (e.target.classList.contains("txt")) editSnap = snap(); });
+world.addEventListener("input", e => {
+  const el = e.target.closest(".node"); if (!el || !e.target.classList.contains("txt")) return;
+  typed(el.dataset.id, readText(e.target)); layout(); renderFoot();
+});
+world.addEventListener("focusout", e => {
+  if (!e.target.classList.contains("txt")) return;
+  setTimeout(() => { if (editing && !els.get(editing)?.contains(document.activeElement)) { commitEdit(); render(); } }, 0);
+});
+// Keys while typing in a node.
+world.addEventListener("keydown", e => {
+  if (!e.target.classList.contains("txt") || !editing) return;
+  const id = editing, f = find(id), k = e.key;
+  if (k === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); commitEdit(); editNode(mutate(() => f.p ? ops.sibling(id) : ops.child(id))); }
+  else if (k === "Tab" && !e.shiftKey) { e.preventDefault(); commitEdit(); editNode(mutate(() => ops.child(id))); }
+  else if (k === "Tab") { e.preventDefault(); if (f.p && f.p !== M.root) { commitEdit(); mutate(() => ops.outdent(id)); editNode(id); } }
+  else if (k === "Backspace" && f.p && !readText(e.target) && !f.n.children.length) { e.preventDefault(); commitEdit(); const to = mutate(() => ops.del(id)); selected = to; render(); }
+  else if (k === "Escape") { e.preventDefault(); commitEdit(); render(); }
+  else if (e.altKey && e.code === "KeyT") { e.preventDefault(); toggleTask(id); editNode(id); }
+  else if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); mutate(() => ops.moveVisual(id, k === "ArrowUp" ? -1 : 1, visualSibs)); editNode(id); }
+  if (e.defaultPrevented) e.stopPropagation();   // handled here: the selected-node keys below must not run too
+});
+// Siblings in the order they are drawn, top to bottom (main branches: only those on the same side).
+function visualSibs(f) {
+  if (f.p === M.root) { const ix = index(); return f.side === "r" ? ix.right : [...ix.left].reverse(); }
+  return f.p.children;
+}
+// Toolbar buttons on nodes, the checkbox, tag chips and the fold pill.
+function act(a, id, el) {
+  const f = find(id); if (!f) return;
+  if (a === "child") editNode(mutate(() => ops.child(id)));
+  else if (a === "sibling") editNode(mutate(() => ops.sibling(id)));
+  else if (a === "delete") { const to = mutate(() => ops.del(id)); selected = to; render(); }
+  else if (a === "fold") mutate(() => { f.n.collapsed = !f.n.collapsed; });
+  else if (a === "task") toggleTask(id);
+  else if (a === "tick") tick(id);
+  else if (a === "details") openDetails(id, el);
+  else if (a === "tag") openPicker(id, el);
+}
+world.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"), el = e.target.closest(".node"); if (!b || !el) return;
+  e.stopPropagation();
+  if (b.dataset.act === "ftag") return quickFilter("tags", b.dataset.tag);
+  select(el.dataset.id); act(b.dataset.act, el.dataset.id, els.get(el.dataset.id));
+});
+world.addEventListener("dblclick", e => { const el = e.target.closest(".node"); if (el && !e.target.closest("[data-act]")) editNode(el.dataset.id); });
+world.addEventListener("contextmenu", e => {
+  const el = e.target.closest(".node"); if (!el) return;
+  e.preventDefault(); commitEdit(); selected = el.dataset.id; render(); openCtx(el.dataset.id, e.clientX, e.clientY);
+});
+
+// Keys when a node is selected but not being edited. Arrow keys move by position on screen.
+document.addEventListener("keydown", e => {
+  const t = e.target, k = e.key, mod = e.metaKey || e.ctrlKey;
+  if (mod && (k === "z" || k === "Z" || k === "y")) {
+    if (t.matches?.("input,textarea")) return;
+    e.preventDefault(); (k === "y" || e.shiftKey) ? redo() : undo(); return;
+  }
+  if (t.closest?.("input,textarea,select,[contenteditable]:not([contenteditable='false']),.pop,.overlay,.menu,.drawer")) return;
+  if (step() === "board") return boardKeys(e);
+  if (step() !== "map" || mode() !== "sketch" || !selected) return;
+  const f = find(selected); if (!f) return;
+  const go = id => { if (id) { select(id); ensureVisible(id); } };
+  const outward = f.side === "l" ? "ArrowLeft" : "ArrowRight", inward = f.side === "l" ? "ArrowRight" : "ArrowLeft";
+  if ((k === "Enter" || k === "F2") && !mod) { e.preventDefault(); editNode(selected); }
+  else if (k === "Tab" && !e.shiftKey) { e.preventDefault(); act("child", selected); }
+  else if (k === "Tab") { e.preventDefault(); if (f.p && f.p !== M.root) mutate(() => ops.outdent(selected)); }
+  else if (k === " ") { e.preventDefault(); tick(selected); }
+  else if (e.altKey && e.code === "KeyT") { e.preventDefault(); toggleTask(selected); }
+  else if ((k === "Delete" || k === "Backspace") && f.p) { e.preventDefault(); act("delete", selected); }
+  else if ((k === "F10" && e.shiftKey) || k === "ContextMenu") { e.preventDefault(); const r = els.get(selected).getBoundingClientRect(); openCtx(selected, r.left + 20, r.bottom + 4); }
+  else if (e.altKey && (k === "ArrowLeft" || k === "ArrowRight") && f.p === M.root) { e.preventDefault(); mutate(() => ops.setSide(selected, k === "ArrowLeft" ? "left" : "right")); ensureVisible(selected); }
+  else if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); mutate(() => ops.moveVisual(selected, k === "ArrowUp" ? -1 : 1, visualSibs)); }
+  else if (k === "ArrowLeft" || k === "ArrowRight") {
+    e.preventDefault();
+    if (!f.p) { const ix = index(); go(k === "ArrowRight" ? ix.right[0]?.id : [...ix.left].reverse()[0]?.id); }
+    else if (k === outward) { if (!f.n.collapsed) go(f.n.children[0]?.id); }
+    else if (k === inward) go(f.p.id);
+  }
+  else if (k === "ArrowUp" || k === "ArrowDown") {
+    e.preventDefault(); if (!f.p) return;
+    const a = visualSibs(f), i = a.indexOf(f.n); go(a[i + (k === "ArrowUp" ? -1 : 1)]?.id);
+  }
+  else if (k === "Escape") select(null);
+});
+
+/* ---------------- sketch: drag, pan, long-press ---------------- */
+// Press a node and move it more than 6px to drag it. Drop on the top or bottom third of a node to place
+// it before or after; on the middle to make it a child. A main branch dropped on empty canvas moves to
+// that side of the centre. Escape cancels. A press that doesn't move selects, or edits a selected node.
+let drag = null, pan = null, press = null;
+stage.addEventListener("pointerdown", e => {
+  closeCtx();
+  if (e.button !== 0 || e.target.closest("[data-act], .zoom, .tools")) return;
+  const el = e.target.closest(".node");
+  if (el && el.dataset.id === editing) return;
+  if (el) {
+    press = { id: el.dataset.id, x: e.clientX, y: e.clientY, pid: e.pointerId, wasSel: selected === el.dataset.id };
+    press.lp = e.pointerType !== "mouse" ? setTimeout(() => { if (press && !drag) { const id = press.id; press = null; selected = id; render(); openCtx(id, e.clientX, e.clientY); } }, 550) : 0;
+    stage.setPointerCapture(e.pointerId);
+  } else {
+    if (editing) { commitEdit(); render(); }
+    pan = { x: e.clientX, y: e.clientY, vx: vp.x, vy: vp.y, moved: false }; stage.setPointerCapture(e.pointerId);
+  }
+});
+stage.addEventListener("pointermove", e => {
+  if (pan) { const dx = e.clientX - pan.x, dy = e.clientY - pan.y; if (Math.abs(dx) + Math.abs(dy) > 3) { pan.moved = true; stage.classList.add("panning"); } vp.x = pan.vx + dx; vp.y = pan.vy + dy; applyVP(); return; }
+  if (press && !drag && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) {
+    clearTimeout(press.lp);
+    if (find(press.id)?.p) startDrag(press.id, e); else press = null;
+  }
+  if (drag) moveDrag(e);
+});
+stage.addEventListener("pointerup", e => {
+  if (pan) { stage.classList.remove("panning"); if (!pan.moved) { select(null); closePops(); } pan = null; return; }
+  if (drag) { endDrag(true); press = null; return; }
+  if (press) { clearTimeout(press.lp); const p = press; press = null; if (p.wasSel) editNode(p.id); else { commitEdit(); selected = p.id; render(); } }
+});
+stage.addEventListener("pointercancel", () => { if (drag) endDrag(false); pan = null; press = null; stage.classList.remove("panning"); });
+window.addEventListener("keydown", e => { if (e.key === "Escape" && drag) { e.stopPropagation(); endDrag(false); } }, true);
+function startDrag(id, e) {
+  commitEdit();
+  const el = els.get(id), ghost = el.cloneNode(true);
+  ghost.className = "node ghost"; ghost.querySelectorAll(".tools,.addc,.more").forEach(x => x.remove());
+  ghost.style.transform = `scale(${vp.k})`; ghost.style.transformOrigin = "0 0";
+  document.body.appendChild(ghost);
+  const set = new Set(); walk(find(id).n, n => set.add(n.id));
+  set.forEach(x => els.get(x)?.classList.add("lift"));
+  const note = document.createElement("div"); note.className = "dropnote"; note.hidden = true; document.body.appendChild(note);
+  const r = el.getBoundingClientRect();
+  drag = { id, ghost, note, set, ox: e.clientX - r.left, oy: e.clientY - r.top, target: null };
+  moveDrag(e);
+}
+function moveDrag(e) {
+  const d = drag; d.ghost.style.left = e.clientX - d.ox + "px"; d.ghost.style.top = e.clientY - d.oy + "px";
+  document.querySelectorAll(".drop-child,.drop-before,.drop-after").forEach(x => x.classList.remove("drop-child", "drop-before", "drop-after"));
+  const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest(".node:not(.ghost)");
+  d.target = null; d.note.hidden = true;
+  if (hit && !d.set.has(hit.dataset.id)) {
+    const r = hit.getBoundingClientRect(), z = (e.clientY - r.top) / r.height, tid = hit.dataset.id, isRoot = !find(tid).p;
+    const zone = isRoot || (z > .3 && z < .7) ? "child" : z <= .3 ? "before" : "after";
+    d.target = { id: tid, zone }; hit.classList.add("drop-" + zone);
+  } else if (!hit && find(d.id).p === M.root) {
+    const rr0 = els.get(M.root.id).getBoundingClientRect(), side = e.clientX < rr0.left + rr0.width / 2 ? "l" : "r";
+    if (side !== find(d.id).side) { d.target = { side }; d.note.hidden = false; d.note.textContent = `Move to the ${side === "l" ? "left" : "right"} side`; d.note.style.left = e.clientX + 14 + "px"; d.note.style.top = e.clientY + 14 + "px"; }
+  }
+}
+function endDrag(apply) {
+  const d = drag; drag = null;
+  d.ghost.remove(); d.note.remove();
+  document.querySelectorAll(".drop-child,.drop-before,.drop-after,.lift").forEach(x => x.classList.remove("drop-child", "drop-before", "drop-after", "lift"));
+  const t = d.target; if (!apply || !t) return;
+  if (t.side) return mutate(() => ops.setSide(d.id, t.side === "l" ? "left" : "right"));
+  const tf = find(t.id);
+  if (t.zone === "child") return mutate(() => ops.moveTo(d.id, t.id, tf.n.children.length));
+  // before/after as drawn: on the left side main branches are drawn in reverse order
+  const p = tf.p, at = p.children.indexOf(tf.n), flip = p === M.root && tf.side === "l";
+  const after = (t.zone === "after") !== flip;
+  mutate(() => {
+    ops.moveTo(d.id, p.id, at + (after ? 1 : 0));
+    if (p === M.root && find(d.id).side !== tf.side) find(d.id).n.side = tf.side === "l" ? "left" : "right";
+  });
+  selected = d.id; render();
+}
+
+/* ---------------- outline view ---------------- */
+// The map as an indented document (main branches in clockwise order) with its Markdown alongside.
+// Rows are rebuilt on each render unless one is being typed in, so the cursor never jumps.
+const doc = $("#doc");
+function outlineOrder() {
+  const out = [], ix = index();
+  (function w(n, d) { out.push([n, d]); if (n.collapsed) return; (d === 0 ? ix.clockwise : n.children).forEach(c => w(c, d + 1)); })(M.root, 0);
+  return out;
+}
+function renderOutline() {
+  $("#mdsrc").textContent = mapMarkdown();
+  if (doc.contains(document.activeElement) && document.activeElement.classList.contains("otxt")) return;
+  const ks = fActive() ? keepSet() : null;
+  doc.innerHTML = `<div class="kicker">Mind map · outline</div>` + outlineOrder().map(([n, d]) => {
+    const f = find(n.id), t = n.task, meta = [t?.due && `<span class="${overdue(n) ? "od" : ""}">${overdue(n) ? "Overdue · " : ""}${fmtDate(t.due)}</span>`, t?.people.length && esc(t.people.join(", ")), ...n.tags.map(x => "#" + esc(tagName(x)))].filter(Boolean).join(" · ");
+    return `<div class="orow d${Math.min(d, 2)}${t ? ` t-${t.status} tint` : ""}${selected === n.id ? " sel" : ""}${ks && !ks.keep.has(n.id) ? " dim" : ""}" data-id="${n.id}" style="--d:${d};--c:${f.main ? `var(--b-${f.main.colour})` : "var(--ink)"}">
+      ${n.children.length ? `<button class="fold" data-oact="fold" aria-label="${n.collapsed ? "Unfold" : "Fold"}">${n.collapsed ? "▸" : "▾"}</button>` : "<span></span>"}
+      ${t ? `<span class="ocb" data-oact="tick" role="checkbox" aria-checked="${t.status === "done"}"></span>` : "<span></span>"}
+      <div class="otxt" contenteditable="true" data-ph="${d ? "Idea" : "What’s on your mind?"}">${esc(n.text)}</div>
+      ${meta ? `<div class="ometa">${meta}</div>` : ""}</div>`;
+  }).join("");
+}
+doc.addEventListener("click", e => {
+  const row = e.target.closest(".orow"); if (!row) return;
+  const a = e.target.closest("[data-oact]")?.dataset.oact, id = row.dataset.id;
+  selected = id;
+  if (a === "fold") mutate(() => { const n = find(id).n; n.collapsed = !n.collapsed; });
+  else if (a === "tick") tick(id);
+});
+doc.addEventListener("focusin", e => { const row = e.target.closest(".orow"); if (row && e.target.classList.contains("otxt")) { editSnap = snap(); selected = row.dataset.id; doc.querySelectorAll(".orow.sel").forEach(r => r.classList.remove("sel")); row.classList.add("sel"); } });
+doc.addEventListener("input", e => { const row = e.target.closest(".orow"); if (row) { typed(row.dataset.id, readText(e.target)); $("#mdsrc").textContent = mapMarkdown(); renderFoot(); } });
+doc.addEventListener("focusout", () => setTimeout(() => { if (!doc.contains(document.activeElement)) renderOutline(); }, 0));
+doc.addEventListener("keydown", e => {
+  const row = e.target.closest(".orow"); if (!row || !e.target.classList.contains("otxt")) return;
+  const id = row.dataset.id, f = find(id), k = e.key;
+  const again = nid => { document.activeElement.blur(); renderOutline(); const t = doc.querySelector(`.orow[data-id="${nid}"] .otxt`); if (t) caretEnd(t); };
+  if (k === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); again(mutate(() => f.p ? ops.sibling(id) : ops.child(id))); }
+  else if (k === "Enter") { e.preventDefault(); document.execCommand("insertLineBreak"); }
+  else if (k === "Tab") { e.preventDefault(); mutate(() => e.shiftKey ? ops.outdent(id) : ops.indent(id)); again(id); }
+  else if (k === "Backspace" && f.p && !readText(e.target) && !f.n.children.length) { e.preventDefault(); const order = outlineOrder(), to = order[order.findIndex(x => x[0].id === id) - 1]?.[0].id; mutate(() => ops.del(id)); again(to || M.root.id); }
+  else if (e.altKey && e.code === "KeyT") { e.preventDefault(); toggleTask(id); again(id); }
+  else if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); mutate(() => ops.moveVisual(id, k === "ArrowUp" ? -1 : 1, x => x.p === M.root ? index().clockwise : x.p.children)); again(id); }
+  else if (k === "Escape") { e.preventDefault(); e.target.blur(); }
+});
+
+/* ---------------- popovers: shared ---------------- */
+// Small floating panels (task details, the tag picker) placed beside what opened them.
+// A click outside every popover, or Escape, closes them.
+function popAt(pop, anchor) {
+  document.body.appendChild(pop); pop._fill?.();
+  const r = anchor.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let x = Math.min(Math.max(8, r.left), innerWidth - pw - 8), y = r.bottom + 8;
+  if (y + ph > innerHeight - 8) y = Math.max(8, r.top - ph - 8);
+  pop.style.left = x + "px"; pop.style.top = y + "px";
+  return pop;
+}
+function closePops(keep) { document.querySelectorAll(".pop").forEach(p => { if (p !== keep) p.remove(); }); }
+document.addEventListener("pointerdown", e => { if (!e.target.closest(".pop,.ctx,[data-act='details'],[data-act='tag']")) closePops(); }, true);
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const top = [...document.querySelectorAll(".pop")].pop();
+  if (top) { e.preventDefault(); e.stopPropagation(); top.remove(); top._back?.focus(); }
+}, true);
+// A name-chip list with an input, as in Issue Tree Studio's Workplan: Enter adds, × removes,
+// names already used in any map are suggested.
+function peopleField(id, fk) {
+  const t = find(id).n.task, w = document.createElement("div"); w.className = "chips";
+  w.innerHTML = t.people.map((p, i) => `<span class="chip">${esc(p)}<button class="x" data-rm="${i}" aria-label="Remove ${esc(p)}">×</button></span>`).join("") +
+    `<input class="addin" list="peopleList" placeholder="Add a name" data-fk="${fk}" aria-label="Add a person">`;
+  w.addEventListener("click", e => { const b = e.target.closest("[data-rm]"); if (b) mutate(() => t.people.splice(+b.dataset.rm, 1)); });
+  w.querySelector("input").addEventListener("keydown", e => {
+    if (e.key !== "Enter") return; e.preventDefault();
+    const v = oneLine(e.target.value); if (!v) return;
+    const known = allPeople().find(p => p.toLowerCase() === v.toLowerCase()) || v;
+    if (!t.people.some(p => p.toLowerCase() === known.toLowerCase())) mutate(() => t.people.push(known));
+    e.target.value = "";
+  });
+  return w;
+}
+const peopleList = document.createElement("datalist"); peopleList.id = "peopleList"; document.body.appendChild(peopleList);
+const refreshPeople = () => { peopleList.innerHTML = allPeople().map(p => `<option value="${esc(p)}">`).join(""); };
+function tagsField(id, fk) {
+  const n = find(id).n, w = document.createElement("div"); w.className = "chips";
+  w.innerHTML = n.tags.map(t => `<span class="chip tag">#${esc(tagName(t))}<button class="x" data-rm="${t}" aria-label="Remove tag">×</button></span>`).join("") + `<button class="addtag" data-fk="${fk}">+ Tag</button>`;
+  w.addEventListener("click", e => {
+    const b = e.target.closest("[data-rm]"); if (b) return removeTag(id, b.dataset.rm);
+    if (e.target.closest(".addtag")) openPicker(id, e.target.closest(".addtag"));
+  });
+  return w;
+}
+// Remember which control had focus, re-render, and put focus back on its replacement.
+function keepFocus(fn) {
+  const fk = document.activeElement?.dataset?.fk; fn();
+  if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus();
+}
+
+/* ---------------- task details ---------------- */
+let detailsFor = null;
+function openDetails(id, anchor) {
+  closePops(); const n = find(id)?.n; if (!n) return;
+  if (!n.task) mutate(() => setTask(id, true));
+  detailsFor = id;
+  const pop = document.createElement("div"); pop.className = "pop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Task details");
+  pop._back = document.activeElement; pop._fill = () => fillDetails(pop, id);
+  popAt(pop, anchor || document.body);
+  pop.querySelector("button")?.focus();
+}
+function fillDetails(pop, id) {
+  const n = find(id)?.n; if (!n?.task) { pop.remove(); return; }
+  const t = n.task;
+  pop.innerHTML = `<div class="fl"><span>Status</span><div class="seg" role="group" aria-label="Status">${STATS.map(s => `<button data-s="${s}" aria-pressed="${t.status === s}" data-fk="d-s-${s}">${STAT_TXT[s]}</button>`).join("")}</div></div>
+    <div class="fl"><span>Delegated to</span><div class="ppl"></div></div>
+    <div class="fl"><span>Due</span><div class="due"><input type="date" value="${t.due}" data-fk="d-due" class="${overdue(n) ? "od" : ""}"><button class="linkbtn" data-clear>Clear</button></div></div>
+    <div class="fl"><span>Tags</span><div class="tgs"></div></div>`;
+  pop.querySelector(".ppl").appendChild(peopleField(id, "d-ppl"));
+  pop.querySelector(".tgs").appendChild(tagsField(id, "d-tag"));
+  pop.querySelectorAll("[data-s]").forEach(b => b.onclick = () => setStatus(id, b.dataset.s));
+  pop.querySelector("input[type=date]").onchange = e => mutate(() => { t.due = e.target.value || ""; });
+  pop.querySelector("[data-clear]").onclick = () => mutate(() => { t.due = ""; });
+}
+// Re-fill open popovers after any change, keeping focus where it was.
+const _render = render;
+render = function () { _render(); refreshPeople(); document.querySelectorAll(".pop").forEach(p => p._fill && keepFocus(() => p._fill())); };
+
+/* ---------------- tag picker ---------------- */
+// Existing tags first (with how often each is used), near-duplicates flagged, and a new tag only from the
+// explicit "Create" row. Enter picks the highlighted row; an exact match never offers to create.
+function openPicker(id, anchor) {
+  document.querySelectorAll(".pop.picker").forEach(p => p.remove());
+  const pop = document.createElement("div"); pop.className = "pop picker"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Add a tag");
+  pop._back = document.activeElement;
+  pop.innerHTML = `<input placeholder="Find or create a tag" aria-label="Tag name" autocomplete="off"><div class="opts" role="listbox"></div>`;
+  const input = pop.querySelector("input"), list = pop.querySelector(".opts");
+  let rows = [], hl = 0;
+  const fill = () => {
+    const n = find(id)?.n; if (!n) return pop.remove();
+    const q = tnorm(input.value), kq = q.toLowerCase(), counts = tagCounts();
+    const fits = name => !kq || tkey(name).includes(kq) || near(q, name);
+    const own = M.tags.filter(t => !n.tags.includes(t.id) && fits(t.name)).sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0) || a.name.localeCompare(b.name));
+    const ownKeys = new Set(M.tags.map(t => tkey(t.name)));
+    const others = new Map();
+    for (const m of Object.values(store.maps)) if (m !== M) for (const t of m.tags || []) if (!ownKeys.has(tkey(t.name)) && fits(t.name)) others.set(tkey(t.name), t.name);
+    const exact = ownKeys.has(kq) || others.has(kq);
+    const dup = q && M.tags.find(t => near(q, t.name));
+    rows = [...own.map(t => ({ kind: "own", t })), ...[...others.values()].map(name => ({ kind: "other", name }))];
+    if (q && !exact) rows.push({ kind: "new", name: q });
+    hl = Math.min(hl, rows.length - 1);
+    let html = "", subDone = false;
+    rows.forEach((r, i) => {
+      if (r.kind === "other" && !subDone) { html += `<div class="sub">From other maps</div>`; subDone = true; }
+      if (r.kind === "new" && dup) html += `<div class="warnl">Close to an existing tag: “${esc(dup.name)}”</div>`;
+      const label = r.kind === "own" ? esc(r.t.name) : r.kind === "other" ? esc(r.name) : `+ Create new tag “${esc(r.name)}”`;
+      const k = r.kind === "own" ? `<span class="k">used ${counts[r.t.id] || 0}×</span>` : "";
+      html += `<button class="opt${r.kind === "new" ? " new" : ""}${i === hl ? " hl" : ""}" data-i="${i}" role="option" aria-selected="${i === hl}" tabindex="-1"><span>${label}</span>${k}</button>`;
+    });
+    if (!rows.length) html = `<div class="sub">${M.tags.length ? "No more tags. Type to create one." : "No tags yet. Type to create one."}</div>`;
+    list.innerHTML = html;
+  };
+  const pick = i => {
+    const r = rows[i]; if (!r) return;
+    mutate(() => addTag(id, r.kind === "own" ? r.t.id : createTag(r.name)));
+    pop.remove(); (pop._back?.isConnected ? pop._back : null)?.focus?.();
+  };
+  input.addEventListener("input", () => { hl = 0; fill(); });
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (rows.length) { hl = (hl + (e.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length; fill(); } }
+    else if (e.key === "Enter") { e.preventDefault(); pick(hl); }
+  });
+  list.addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (b) pick(+b.dataset.i); });
+  pop._fill = fill;
+  popAt(pop, anchor || document.body); input.focus();
+}
+
+/* ---------------- right-click menu ---------------- */
+// Mirrors the node toolbar: nothing here that can't be reached another way.
+let ctxEl = null;
+function closeCtx() { ctxEl?.remove(); ctxEl = null; }
+function openCtx(id, x, y) {
+  closeCtx(); closePops();
+  const f = find(id); if (!f) return;
+  const n = f.n, m = document.createElement("div"); m.className = "menu ctx"; m.setAttribute("role", "menu");
+  const item = (a, label, key = "", cls = "") => `<button role="menuitem" data-c="${a}" class="${cls}">${label}<kbd>${key}</kbd></button>`;
+  let h = "";
+  if (!f.p) {
+    h = item("child", "Add branch", "Tab") + item("tags", "Manage tags…") + `<hr>` + item("foldall", "Fold all") + item("unfoldall", "Unfold all");
+  } else {
+    h = item("child", "Add child", "Tab") + item("sibling", "Add sibling", "Enter") + `<hr>` + item("task", n.task ? "Remove task" : "Make task", "Alt+T");
+    if (n.task) h += `<div class="row-sw"><span class="lb">Status</span><span class="stat3">${STATS.map(s => `<button data-c="st-${s}" aria-pressed="${n.task.status === s}">${STAT_TXT[s]}</button>`).join("")}</span></div>` + item("details", "Task details…");
+    h += `<hr>` + item("tag", "Add tag…") + item("tags", "Manage tags…") + `<hr>`;
+    h += `<div class="row-sw"><span class="lb">Colour</span>${PALETTE.map(c => `<button class="sw" data-c="col-${c}" style="--c:var(--b-${c})" aria-pressed="${f.main.colour === c}" title="${c[0].toUpperCase() + c.slice(1)}" aria-label="${c}"></button>`).join("")}<button class="sw auto" data-c="col-auto" title="Automatic" aria-label="Automatic colour"></button></div>`;
+    if (f.p === M.root && n.side !== "auto") h += item("autoside", "Automatic side");
+    if (n.children.length) h += item("fold", n.collapsed ? "Unfold" : "Fold");
+    h += `<hr>` + item("delete", "Delete", "⌫", "del");
+  }
+  m.innerHTML = h; document.body.appendChild(m); ctxEl = m;
+  m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px"; m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + "px";
+  m.addEventListener("click", e => {
+    const c = e.target.closest("[data-c]")?.dataset.c; if (!c) return;
+    closeCtx();
+    const anchor = els.get(id) || document.querySelector(`.orow[data-id="${id}"]`);
+    if (c.startsWith("st-")) setStatus(id, c.slice(3));
+    else if (c.startsWith("col-")) mutate(() => { const main = find(id).main; main.colour = c === "col-auto" ? nextColour(M.root.children.filter(x => x !== main)) : c.slice(4); });
+    else if (c === "tags") openTagManager();
+    else if (c === "foldall" || c === "unfoldall") mutate(() => walk(M.root, (x, d) => { if (d > 0 && x.children.length) x.collapsed = c === "foldall"; }));
+    else if (c === "autoside") mutate(() => ops.setSide(id, "auto"));
+    else act(c, id, anchor);
+  });
+  m.addEventListener("keydown", e => {
+    const items = [...m.querySelectorAll("button")], i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+    else if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); items[(i + (e.key === "ArrowRight" ? 1 : items.length - 1)) % items.length].focus(); }
+    else if (e.key === "Escape" || e.key === "Tab") { e.preventDefault(); closeCtx(); }
+  });
+  m.querySelector("button").focus();
+}
+document.addEventListener("pointerdown", e => { if (ctxEl && !e.target.closest(".ctx")) closeCtx(); });
+
+/* ---------------- manage tags ---------------- */
+// Rename (everywhere at once, since nodes refer to tags by id), merge and delete, each one undo step.
+// Renaming to another tag's name, or deleting a tag in use, asks first in the row itself.
+function openTagManager() {
+  closePops(); closeCtx();
+  const ov = document.createElement("div"); ov.className = "overlay";
+  ov.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tmTitle"><h2 id="tmTitle">Manage tags</h2>
+    <p>Rename a tag and it changes on every node. Merge two tags to tidy up duplicates.</p><div class="tagrows"></div>
+    <div class="acts"><button class="btn primary" data-done>Done</button></div></div>`;
+  const rowsEl = ov.querySelector(".tagrows");
+  const fill = () => {
+    const c = tagCounts();
+    rowsEl.innerHTML = M.tags.length ? [...M.tags].sort((a, b) => a.name.localeCompare(b.name)).map(t => `<div class="tagrow" data-id="${t.id}">
+      <input value="${esc(t.name)}" aria-label="Tag name"><span class="k">used ${c[t.id] || 0}×</span>
+      <select aria-label="Merge into"><option value="">Merge into…</option>${M.tags.filter(x => x !== t).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
+      <button class="x" aria-label="Delete tag" title="Delete tag">×</button></div>`).join("") : `<p>No tags yet. Add one from a node’s Tag button.</p>`;
+  };
+  const ask = (row, msg, yes, run) => {
+    row.insertAdjacentHTML("afterend", `<div class="tagrow ask" style="grid-template-columns:1fr auto auto"><span style="color:var(--warn);font-size:13px">${msg}</span><button class="btn" data-yes>${yes}</button><button class="btn" data-no>Cancel</button></div>`);
+    const a = row.nextElementSibling; a.querySelector("[data-yes]").onclick = () => { mutate(run); fill(); }; a.querySelector("[data-no]").onclick = fill;
+    a.querySelector("[data-yes]").focus();
+  };
+  rowsEl.addEventListener("change", e => {
+    const row = e.target.closest(".tagrow"), id = row?.dataset.id; if (!id) return;
+    if (e.target.tagName === "SELECT" && e.target.value) { const into = e.target.value; mutate(() => tagOps.merge(id, into)); fill(); }
+    else if (e.target.tagName === "INPUT") {
+      const name = tnorm(e.target.value), other = findTag(name);
+      if (!name) return fill();
+      if (other && other.id !== id) ask(row, `“${esc(other.name)}” already exists. Merge “${esc(tagName(id))}” into it?`, "Merge", () => tagOps.merge(id, other.id));
+      else if (name !== tagName(id)) { mutate(() => tagOps.rename(id, name)); fill(); }
+    }
+  });
+  rowsEl.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.target.blur(); });
+  rowsEl.addEventListener("click", e => {
+    const b = e.target.closest(".x"); if (!b) return;
+    const row = b.closest(".tagrow"), id = row.dataset.id, used = tagCounts()[id] || 0;
+    if (used) ask(row, `Remove “${esc(tagName(id))}” from ${used} node${used > 1 ? "s" : ""}?`, "Remove", () => tagOps.remove(id));
+    else { mutate(() => tagOps.remove(id)); fill(); }
+  });
+  const close = () => { ov.remove(); render(); };
+  ov.querySelector("[data-done]").onclick = close;
+  ov.addEventListener("pointerdown", e => { if (e.target === ov) close(); });
+  ov.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Escape") close(); });
+  document.body.appendChild(ov); fill(); ov.querySelector("input,button").focus();
+}
+
+/* ---------------- filter bar ---------------- */
+const fbar = $("#fbar");
+function openFilterBar(open = fbar.hidden) { fbar.hidden = !open; $("#filterBtn").setAttribute("aria-expanded", open); if (stage.clientWidth) applyVP(); }
+$("#filterBtn").onclick = () => openFilterBar();
+$("#fClear").onclick = () => { F = { tags: new Set(), people: new Set(), status: new Set() }; saveFilter(); render(); };
+$("#fTags").onclick = openTagManager;
+function filterOptions(kind) {
+  if (kind === "tags") { const c = tagCounts(); return [...M.tags].sort((a, b) => a.name.localeCompare(b.name)).map(t => [t.id, "#" + t.name, c[t.id] || 0]); }
+  if (kind === "people") return peopleIn(M).sort().map(p => [p.toLowerCase(), p, allTasks().filter(n => n.task.people.some(x => x.toLowerCase() === p.toLowerCase())).length]);
+  const t = allTasks();
+  return [...STATS.map(s => [s, STAT_TXT[s], t.filter(n => n.task.status === s).length]), ["overdue", "Overdue", t.filter(overdue).length]];
+}
+function renderFilterBar() {
+  for (const b of fbar.querySelectorAll("[data-fk]")) {
+    const k = b.dataset.fk, n = F[k].size;
+    b.textContent = { tags: "Tags", people: "People", status: "Status" }[k] + (n ? ` · ${n}` : "") + " ▾"; b.classList.toggle("set", !!n);
+  }
+  const nodes = countNodes(), t = allTasks();
+  if (fActive()) { const { hit } = keepSet(); $("#fsum").textContent = `Showing ${hit.size} of ${nodes} nodes · ${t.filter(matches).length} of ${t.length} tasks`; }
+  else $("#fsum").textContent = "No filter: showing everything";
+  $("#fClear").hidden = !fCount();
+}
+fbar.addEventListener("click", e => {
+  const b = e.target.closest("button[data-fk]"); if (!b) return;
+  const wrap = b.parentElement, open = wrap.querySelector(".menu");
+  fbar.querySelectorAll(".menu").forEach(m => m.remove()); if (open) return;
+  const k = b.dataset.fk, m = document.createElement("div"); m.className = "menu"; m.setAttribute("role", "menu");
+  const opts = filterOptions(k);
+  m.innerHTML = opts.length ? opts.map(([v, label, c]) => `<label><input type="checkbox" value="${esc(v)}" ${F[k].has(v) ? "checked" : ""}>${esc(label)}<span class="k">${c}</span></label>`).join("") : `<div class="none">${k === "tags" ? "No tags yet" : "No one delegated yet"}</div>`;
+  m.addEventListener("change", e2 => setFilter(k, e2.target.value, e2.target.checked));
+  m.addEventListener("keydown", e2 => { if (e2.key === "Escape") { m.remove(); b.focus(); } });
+  wrap.appendChild(m); m.querySelector("input")?.focus();
+});
+document.addEventListener("pointerdown", e => { if (!e.target.closest("#fbar .menu-wrap")) fbar.querySelectorAll(".menu").forEach(m => m.remove()); });
+
+/* ---------------- step 2: tasks ---------------- */
+// The Workplan-style table: grouped by main branch in clockwise order, or one list by due date.
+let sortBy = "map";
+const tasksEl = $("#tasks");
+const pathOf = id => ancestors(id).slice(1).map(a => oneLine(a.text) || "Untitled");
+function taskRow(n) {
+  const t = n.task, od = overdue(n), where = pathOf(n.id).join(" › ");
+  return `<tr class="t-${t.status}" data-id="${n.id}">
+    <td class="c-cb"><button class="cbx s-${t.status}" data-ta="tick" data-fk="cb-${n.id}" aria-label="${t.status === "done" ? "Untick" : "Tick"}" aria-pressed="${t.status === "done"}"></button></td>
+    <td class="c-tx"><div class="ed" contenteditable="true" data-ta="text" data-fk="tx-${n.id}" data-ph="Task">${esc(n.text)}</div></td>
+    <td class="c-wh">${where ? `<button data-ta="go" title="Show on the map">${esc(where)}</button>` : `<button data-ta="go" title="Show on the map">Main branch</button>`}</td>
+    <td><button class="stat s-${t.status}" data-ta="status" data-fk="st-${n.id}" title="Change status">${STAT_TXT[t.status]}</button></td>
+    <td class="c-pp" data-slot="ppl"></td>
+    <td class="c-du"><input type="date" value="${t.due}" data-ta="due" data-fk="du-${n.id}" class="${od ? "od" : ""}" aria-label="Due date"></td>
+    <td class="c-tg" data-slot="tags"></td>
+    <td class="c-x"><button data-ta="untask" title="Remove from tasks (the node stays on the map)" aria-label="Remove from tasks">×</button></td></tr>`;
+}
+function renderTasks() {
+  if (tasksEl.contains(document.activeElement) && document.activeElement.classList.contains("ed")) return;
+  const fk = document.activeElement?.dataset?.fk;
+  const all = allTasks(), shown = shownTasks(), ix = index();
+  const tot = s => all.filter(n => n.task.status === s).length;
+  const people = peopleIn(M).sort().map(p => {
+    const mine = all.filter(n => n.task.people.some(x => x.toLowerCase() === p.toLowerCase()) && n.task.status !== "done");
+    const od = mine.filter(overdue).length;
+    return `<button class="chip" data-person="${esc(p.toLowerCase())}" aria-pressed="${F.people.has(p.toLowerCase())}">${esc(p)}<span class="k">${mine.length}</span>${od ? `<span class="k od">· ${od} overdue</span>` : ""}</button>`;
+  }).join("");
+  let body = "";
+  if (!ix.clockwise.length) body = `<div class="empty"><p>Add branches on the map first.</p><button class="btn" data-ta="tomap">Go to the map</button></div>`;
+  else if (!all.length) body = `<div class="empty"><p>Flag any node as a task with <b>Alt+T</b> or the Task button.</p><button class="btn" data-ta="tomap">Go to the map</button></div>`;
+  else {
+    const head = `<thead><tr><th class="c-cb"><span class="sr-only"></span></th><th>Task</th><th>Where</th><th>Status</th><th>Delegated to</th><th>Due</th><th>Tags</th><th></th></tr></thead>`;
+    let rows = "";
+    if (sortBy === "due") rows = [...shown].sort((a, b) => (a.task.due || "9999") < (b.task.due || "9999") ? -1 : (a.task.due || "9999") > (b.task.due || "9999") ? 1 : 0).map(taskRow).join("");
+    else for (const m of ix.clockwise) {
+      const mine = []; walk(m, n => { if (n.task) mine.push(n); });
+      const vis = mine.filter(n => shown.includes(n));
+      if (fActive() && !vis.length) continue;
+      rows += `<tr class="tgrp" style="--c:var(--b-${m.colour})"><td colspan="8">${esc(oneLine(m.text) || "Untitled branch")}<span class="k">${mine.filter(n => n.task.status === "done").length} of ${mine.length} done</span></td></tr>` +
+        vis.map(taskRow).join("") + `<tr class="addrow"><td></td><td colspan="7"><button class="linkbtn" data-ta="add" data-main="${m.id}" data-fk="add-${m.id}">+ Add task</button></td></tr>`;
+    }
+    body = `<div class="tbl-top"><label>Sort <select data-ta="sort" class="btn"><option value="map">Map order</option><option value="due" ${sortBy === "due" ? "selected" : ""}>Due date</option></select></label></div>
+      <table class="tt">${head}<tbody>${rows || `<tr><td colspan="8" class="empty">No tasks match the filter.</td></tr>`}</tbody></table>`;
+  }
+  tasksEl.innerHTML = `<section class="sheetpg"><div class="kicker">Step 2 · Tasks</div><h2 class="pg-title">${esc(M.title || "Untitled map")}</h2>
+    <p class="pg-intro">Every node flagged as a task. Edit anything here and the map changes with it.</p>
+    <div class="summary"><span class="tot">To do <b>${tot("todo")}</b> · Doing <b>${tot("doing")}</b> · Done <b>${tot("done")}</b> · Overdue <b>${all.filter(overdue).length}</b></span>${people ? `<span class="sep"></span>${people}` : ""}</div>${body}</section>`;
+  tasksEl.querySelectorAll("tr[data-id]").forEach(tr => {
+    tr.querySelector('[data-slot="ppl"]').appendChild(peopleField(tr.dataset.id, "pp-" + tr.dataset.id));
+    tr.querySelector('[data-slot="tags"]').appendChild(tagsField(tr.dataset.id, "tg-" + tr.dataset.id));
+  });
+  if (fk) tasksEl.querySelector(`[data-fk="${fk}"]`)?.focus();
+}
+function goToMap(id) { M.view.step = "map"; M.view.mode = "sketch"; selected = id; ancestors(id).forEach(a => a.collapsed = false); touchModel(); render(); ensureVisible(id); }
+tasksEl.addEventListener("click", e => {
+  const p = e.target.closest("[data-person]"); if (p) return setFilter("people", p.dataset.person);
+  const b = e.target.closest("[data-ta]"); if (!b) return;
+  const id = b.closest("tr")?.dataset.id, a = b.dataset.ta;
+  if (a === "tick") tick(id);
+  else if (a === "status") cycleStatus(id);
+  else if (a === "untask") mutate(() => setTask(id, false));
+  else if (a === "go") goToMap(id);
+  else if (a === "tomap") { M.view.step = "map"; render(); }
+  else if (a === "add") {
+    const nid = mutate(() => { const x = ops.child(b.dataset.main); setTask(x, true); return x; });
+    if (fActive()) { F = { tags: new Set(), people: new Set(), status: new Set() }; saveFilter(); render(); }
+    tasksEl.querySelector(`[data-fk="tx-${nid}"]`)?.focus();
+  }
+});
+tasksEl.addEventListener("change", e => {
+  const a = e.target.dataset.ta;
+  if (a === "sort") { sortBy = e.target.value; render(); }
+  else if (a === "due") { const id = e.target.closest("tr").dataset.id; mutate(() => { find(id).n.task.due = e.target.value || ""; }); }
+});
+tasksEl.addEventListener("focusin", e => { if (e.target.classList.contains("ed")) editSnap = snap(); });
+tasksEl.addEventListener("input", e => { if (e.target.classList.contains("ed")) { typed(e.target.closest("tr").dataset.id, readText(e.target)); renderFoot(); } });
+tasksEl.addEventListener("keydown", e => {
+  if (!e.target.classList.contains("ed")) return;
+  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Escape") { e.preventDefault(); e.target.blur(); }
+  else if (e.key === "Enter") { e.preventDefault(); document.execCommand("insertLineBreak"); }
+});
+tasksEl.addEventListener("focusout", e => { if (e.target.classList.contains("ed")) setTimeout(() => { if (!tasksEl.contains(document.activeElement) || !document.activeElement.classList.contains("ed")) render(); }, 0); });
+
+/* ---------------- step 3: board ---------------- */
+// Three fixed columns. Cards follow map order, so there is no separate board order to keep in step.
+const boardEl = $("#board");
+let boardSel = null, bdrag = null;
+function renderBoard() {
+  if (boardEl.contains(document.activeElement) && document.activeElement.classList.contains("bt")) return;
+  const shown = shownTasks();
+  boardEl.innerHTML = `<div class="board">${STATS.map(s => {
+    const cards = shown.filter(n => n.task.status === s);
+    return `<section class="col c-${s}" data-col="${s}" aria-label="${STAT_TXT[s]}"><h3>${STAT_TXT[s]}<span>${cards.length}</span></h3>${cards.map(n => {
+      const t = n.task, main = find(n.id).main;
+      return `<div class="bcard${boardSel === n.id ? " sel" : ""}" data-id="${n.id}" tabindex="0" style="--c:var(--b-${main.colour})">
+        <div class="bt">${esc(n.text) || "<i>Untitled</i>"}</div>
+        <div class="bm"><span class="br" data-ba="go">${esc(oneLine(main.text))}</span>${t.people.length ? `<span>${esc(t.people.join(", "))}</span>` : ""}${t.due ? `<span class="${overdue(n) ? "od" : ""}">${overdue(n) ? "Overdue · " : ""}${fmtDate(t.due)}</span>` : ""}${n.tags.map(x => `<span class="tg" data-ba="tag" data-tag="${x}">#${esc(tagName(x))}</span>`).join("")}</div></div>`;
+    }).join("")}</section>`;
+  }).join("")}</div>`;
+  if (boardSel) boardEl.querySelector(`.bcard[data-id="${boardSel}"]`)?.focus({ preventScroll: true });
+}
+function boardKeys(e) {
+  if (!boardSel || !find(boardSel)) return;
+  const t = find(boardSel).n.task, i = STATS.indexOf(t.status);
+  if (e.key === " ") { e.preventDefault(); tick(boardSel); }
+  else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) { e.preventDefault(); const j = i + (e.key === "ArrowRight" ? 1 : -1); if (STATS[j]) setStatus(boardSel, STATS[j]); }
+  else if (e.key === "Enter") { e.preventDefault(); openDetails(boardSel, boardEl.querySelector(`.bcard[data-id="${boardSel}"]`)); }
+}
+boardEl.addEventListener("keydown", e => { if (e.target.classList.contains("bcard")) { boardSel = e.target.dataset.id; boardKeys(e); } });
+boardEl.addEventListener("pointerdown", e => {
+  const c = e.target.closest(".bcard"); if (!c || e.button !== 0 || e.target.closest("[data-ba]") || e.target.isContentEditable) return;
+  bdrag = { id: c.dataset.id, x: e.clientX, y: e.clientY, el: c, on: false }; c.setPointerCapture(e.pointerId);
+});
+boardEl.addEventListener("pointermove", e => {
+  const d = bdrag; if (!d) return;
+  if (!d.on && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) {
+    d.on = true; const r = d.el.getBoundingClientRect();
+    d.ghost = d.el.cloneNode(true); d.ghost.className = "bcard ghost"; d.ghost.style.width = r.width + "px"; document.body.appendChild(d.ghost);
+    d.ox = e.clientX - r.left; d.oy = e.clientY - r.top; d.el.classList.add("lift");
+  }
+  if (!d.on) return;
+  d.ghost.style.left = e.clientX - d.ox + "px"; d.ghost.style.top = e.clientY - d.oy + "px";
+  boardEl.querySelectorAll(".col").forEach(c => c.classList.remove("over"));
+  const col = document.elementFromPoint(e.clientX, e.clientY)?.closest(".col"); col?.classList.add("over"); d.col = col?.dataset.col;
+});
+boardEl.addEventListener("pointerup", e => {
+  const d = bdrag; bdrag = null; if (!d) return;
+  boardEl.querySelectorAll(".col").forEach(c => c.classList.remove("over"));
+  if (d.on) { d.ghost.remove(); d.el.classList.remove("lift"); boardSel = d.id; if (d.col && d.col !== find(d.id).n.task.status) setStatus(d.id, d.col); else render(); return; }
+  boardSel = d.id; render(); openDetails(d.id, boardEl.querySelector(`.bcard[data-id="${d.id}"]`));
+});
+boardEl.addEventListener("pointercancel", () => { if (bdrag?.ghost) bdrag.ghost.remove(); bdrag = null; render(); });
+boardEl.addEventListener("click", e => {
+  const b = e.target.closest("[data-ba]"); if (!b) return;
+  const id = b.closest(".bcard").dataset.id;
+  if (b.dataset.ba === "go") goToMap(id); else quickFilter("tags", b.dataset.tag);
+});
+boardEl.addEventListener("dblclick", e => {
+  const t = e.target.closest(".bt"); if (!t) return;
+  closePops(); editSnap = snap(); t.contentEditable = "true"; caretEnd(t);
+});
+boardEl.addEventListener("input", e => { if (e.target.classList.contains("bt")) typed(e.target.closest(".bcard").dataset.id, readText(e.target)); });
+boardEl.addEventListener("keydown", e => { if (e.target.classList.contains("bt") && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); e.stopPropagation(); e.target.blur(); } }, true);
+boardEl.addEventListener("focusout", e => { if (e.target.classList.contains("bt")) { e.target.contentEditable = "false"; setTimeout(render, 0); } });
+
+/* ---------------- toolbar ---------------- */
+document.querySelectorAll("button[data-step]").forEach(b => b.onclick = () => { commitEdit(); closePops(); M.view.step = b.dataset.step; saveView(); render(); });
+document.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { commitEdit(); M.view.mode = b.dataset.mode; saveView(); render(); });
+document.querySelectorAll("button[data-colour]").forEach(b => b.onclick = () => { M.view.colour = b.dataset.colour === "on"; saveView(); render(); });
+document.querySelectorAll("button[data-simplify]").forEach(b => b.onclick = () => { M.view.simplify = b.dataset.simplify === "on"; saveView(); render(); });
+// View settings are saved with the map but are not undo steps.
+function saveView() { M.updated = Date.now(); scheduleSave(); }
+$("#undo").onclick = undo; $("#redo").onclick = redo;
+function renderPicker() {
+  const p = $("#picker"), list = Object.values(store.maps).sort((a, b) => b.updated - a.updated);
+  const html = list.map(m => `<option value="${m.id}" ${m === M ? "selected" : ""}>${esc(oneLine(m.root.text) || "Untitled map")}</option>`).join("");
+  if (p._h !== html) { p.innerHTML = html; p._h = html; }
+}
+$("#picker").onchange = e => switchTo(e.target.value);
+function switchTo(id) {
+  commitEdit(); closePops(); closeCtx();
+  store.current = id; M = store.maps[id]; normalise(M);
+  undoStack = []; redoStack = []; selected = null; editing = null; F = loadFilter(); touchModel();
+  for (const el of els.values()) el.remove(); els.clear(); inkCache.clear(); pos = {};
+  fitted = null; saveLocal(); render();
+}
+$("#newMap").onclick = () => newMap(blankMap());
+function newMap(m) {
+  normalise(m); store.maps[m.id] = m; switchTo(m.id); scheduleSave();
+  if (m.root.text === "" && !m.root.children.length) editNode(M.root.id);
+}
+$("#delMap").onclick = () => {
+  const gone = M, id = gone.id;
+  delete store.maps[id]; store.deleted[id] = Date.now();
+  if (!Object.keys(store.maps).length) { const b = blankMap(); store.maps[b.id] = b; }
+  switchTo(newestId()); pushCloud(id);
+  toast(`Deleted “${oneLine(gone.root.text) || "Untitled map"}”`, { label: "Undo", run: () => { store.maps[id] = gone; delete store.deleted[id]; gone.updated = Date.now(); switchTo(id); scheduleSave(); } });
+};
+$("#copyMd").onclick = $("#copyMd2").onclick = async () => { try { await navigator.clipboard.writeText(mapMarkdown()); toast("Markdown copied"); } catch { toast("Couldn’t copy. Use Export instead."); } };
+
+/* ---------------- Markdown ---------------- */
+// The map as an outline (SPEC section 14.1): # centre, ## each main branch in clockwise order, then a
+// list. Tasks use GitHub task-list syntax; details follow " · ". Characters that would be misread when
+// the file is opened again are escaped, and line breaks are written as <br>.
+const mdEsc = s => String(s).replace(/\\/g, "\\\\").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/ · /g, " \\· ").replace(/_\(/g, "\\_(").replace(/^([#[\-*+>]|\d+[.)])/, "\\$1").replace(/\n/g, "<br>");
+const mdUnesc = s => s.replace(/<br\s*\/?>/gi, "\n").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\\(.)/g, "$1");
+function mdLine(n) {
+  const t = n.task, bits = [];
+  if (t?.people.length) bits.push(t.people.map(mdEsc).join(", "));
+  if (t?.due) bits.push("due " + t.due);
+  if (n.tags.length) bits.push(n.tags.map(x => "#" + tagName(x).replace(/\s+/g, "-")).join(" "));
+  return (t ? (t.status === "done" ? "[x] " : "[ ] ") : "") + (mdEsc(n.text) || "Untitled") + (t?.status === "doing" ? " _(doing)_" : "") + bits.map(b => " · " + b).join("");
+}
+function mapMarkdown() {
+  const out = ["---", "app: Mindmap Studio", `format: ${FORMAT}`, "---", "", "# " + mdLine(M.root)];
+  for (const m of index().clockwise) {
+    out.push("", "## " + mdLine(m), "");
+    (function w(n, d) { for (const c of n.children) { out.push("  ".repeat(d) + "- " + mdLine(c)); w(c, d + 1); } })(m, 0);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n") + "\n";
+}
+const cellMd = s => String(s ?? "").replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+const taskCells = n => [STAT_TXT[n.task.status], n.text, pathOf(n.id).join(" › "), n.task.people.join(", "), n.task.due, n.tags.map(t => "#" + tagName(t)).join(" ")];
+function tasksMarkdown() {
+  const shown = shownTasks(), out = [`# ${M.title || "Untitled map"}: tasks`, ""];
+  if (fActive()) out.push(`_Filtered: ${shown.length} of ${allTasks().length} tasks_`, "");
+  for (const m of index().clockwise) {
+    const mine = shown.filter(n => find(n.id).main === m); if (!mine.length) continue;
+    out.push(`## ${oneLine(m.text)}`, "", "| Status | Task | Where | Delegated to | Due | Tags |", "| --- | --- | --- | --- | --- | --- |",
+      ...mine.map(n => "| " + taskCells(n).map(cellMd).join(" | ") + " |"), "");
+  }
+  return out.join("\n");
+}
+function boardMarkdown() {
+  const shown = shownTasks(), out = [`# ${M.title || "Untitled map"}: board`, ""];
+  if (fActive()) out.push(`_Filtered: ${shown.length} of ${allTasks().length} tasks_`, "");
+  for (const s of STATS) { const c = shown.filter(n => n.task.status === s); out.push(`## ${STAT_TXT[s]} (${c.length})`, "", ...c.map(n => "- " + mdLine(n)), ""); }
+  return out.join("\n");
+}
+
+// Read Markdown or any indented list into { root, tags }. Headings set levels (# is the centre,
+// ## main branches), list indentation sets the rest. Numbers, statuses and notes left by the other
+// Studios are dropped, and their worksheet and workplan sections are skipped.
+const SKIP = /^(problem definition|workplan|work packages|scope|tasks|board)$/i;
+function parseMarkdown(text) {
+  let src = String(text).replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"), app = "";
+  const fm = src.match(/^---\n([\s\S]*?)\n---\n?/);
+  if (fm) { app = (fm[1].match(/^app:\s*(.+)$/m) || [])[1] || ""; src = src.slice(fm[0].length); }
+  src = src.replace(/<!--[\s\S]*?-->/g, "").replace(/```[\s\S]*?```/g, "");
+  const tags = [], tagId = name => { const k = tkey(name); let t = tags.find(x => tkey(x.name) === k); if (!t) tags.push(t = { id: uid(), name: tnorm(name) }); return t.id; };
+  const item = raw => {
+    let s = raw.replace(/^\*\*[^*]{1,14}\*\*\s+/, "").replace(/^(\d+(\.\d+)+\.?|\d+[.)]|[A-Za-z][.)]|[ivxlc]+\.)\s+/i, "");
+    let task = null;
+    const tm = s.match(/^\[( |x|X)\]\s+/); if (tm) { task = { status: tm[1] === " " ? "todo" : "done", people: [], due: "" }; s = s.slice(tm[0].length); }
+    const parts = s.split(/(?<!\\) · /), n = mk("");
+    let first = parts.shift();
+    if (/\s_\(doing\)_$/.test(first)) { first = first.replace(/\s_\(doing\)_$/, ""); if (task) task.status = "doing"; }
+    first = first.replace(/\s_\((supported|refuted|to test|open)\)_/gi, "").replace(/\s`[^`]*`\s*$/, "");
+    n.text = mdUnesc(first).trim();
+    for (const p of parts) {
+      const due = p.match(/^due (\d{4}-\d{2}-\d{2})$/);
+      if (due) { if (task) task.due = due[1]; }
+      else if (/^#/.test(p)) n.tags = [...new Set(p.split(/\s+/).filter(Boolean).map(x => tagId(x.replace(/^#/, "").replace(/-/g, " "))))];
+      else if (task) task.people = p.split(/,\s*/).map(x => oneLine(mdUnesc(x))).filter(Boolean);
+    }
+    if (task) n.task = task;
+    return n;
+  };
+  const root = mk(""); let hadH1 = false;
+  const stack = [{ lvl: 0, n: root }];   // heading levels 1–6; list items sit below the last heading
+  let base = null, lists = [], skipping = 0;
+  for (const line of src.split("\n")) {
+    if (!line.trim() || /^\s*\|/.test(line) || /^\s*(---|\*\*\*)\s*$/.test(line)) continue;
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      const lvl = h[1].length, body = h[2].trim();
+      if (skipping && lvl <= skipping) skipping = 0;
+      if (skipping) continue;
+      if (lvl >= 2 && SKIP.test(body.replace(/\s*\(\d+\)$/, ""))) { skipping = lvl; continue; }
+      if (lvl === 1 && !hadH1) { const r = item(body); Object.assign(root, { text: r.text, tags: r.tags }); hadH1 = true; stack.length = 1; lists = []; continue; }
+      while (stack.length > 1 && stack[stack.length - 1].lvl >= lvl) stack.pop();
+      const n = item(body); stack[stack.length - 1].n.children.push(n); stack.push({ lvl, n }); lists = []; continue;
+    }
+    if (skipping || /^\s*(\*\*|_)[^*_]+:(\*\*|_)/.test(line)) continue;
+    const m = line.match(/^(\s*)(?:[-*+]\s+)?(.*)$/), ind = m[1].replace(/\t/g, "  ").length, body = m[2].trim(); if (!body) continue;
+    const parent0 = stack[stack.length - 1].n;
+    while (lists.length && lists[lists.length - 1].ind >= ind) lists.pop();
+    const n = item(body);
+    (lists.length ? lists[lists.length - 1].n : parent0).children.push(n);
+    lists.push({ ind, n });
+  }
+  // No heading: the top line is the centre, its children and the other top-level lines become main branches.
+  if (!hadH1 && root.children.length) {
+    const [first, ...rest] = root.children; root.text = first.text; root.tags = first.tags; root.children = [...first.children, ...rest];
+  }
+  // Another Studio's file: one ## section holds the tree, its heading is the key question.
+  if (!/mindmap studio/i.test(app) && root.children.length === 1 && root.children[0].children.length) {
+    const only = root.children[0];
+    root.text = only.text.replace(/^(key question|governing hypothesis|key metric|project|question|hypothesis)\s*:\s*/i, ""); root.children = only.children;
+  }
+  return { root, tags };
+}
+// Build a map from any opened text: a Mindmap Studio JSON file comes back exactly; anything else is
+// read as Markdown or an indented list.
+function readAny(text) {
+  const t = String(text).trim();
+  if (t.startsWith("{")) {
+    let o; try { o = JSON.parse(t); } catch { throw new Error("That file isn’t valid JSON"); }
+    if (!o || typeof o !== "object" || !o.root) throw new Error("That isn’t a Mindmap Studio file");
+    if ((o.format || 1) > FORMAT) toast("This file was saved by a newer Mindmap Studio. Some details may not show.");
+    const m = { ...o }; delete m.app; delete m.format; delete m.appVersion;
+    return normalise(m);
+  }
+  const { root, tags } = parseMarkdown(t);
+  if (!root.text && !root.children.length) throw new Error("Nothing to open");
+  return normalise({ ...blankMap(), root, tags });
+}
+function fileObj(m = M) {
+  const { id, title, updated, view, tags, root, qc, example, ...rest } = m;
+  return { app: "Mindmap Studio", format: FORMAT, appVersion: APP_VERSION, id, title, updated: new Date(updated).toISOString(), view, tags, root, qc, ...rest };
+}
+
+/* ---------------- open + save ---------------- */
+const opener = $("#opener");
+function openDialog() { opener.hidden = false; $("#opText").value = ""; $("#opFile").focus(); }
+function closeDialog() { opener.hidden = true; $("#openBtn").focus(); }
+$("#openBtn").onclick = openDialog;
+$("#opCancel").onclick = closeDialog;
+opener.addEventListener("pointerdown", e => { if (e.target === opener) closeDialog(); });
+opener.addEventListener("keydown", e => { if (e.key === "Escape") { e.stopPropagation(); closeDialog(); } });
+function importText(text, asNew, msg) {
+  let m; try { m = readAny(text); } catch (e) { toast(e.message || "Couldn’t read that"); return false; }
+  if (asNew || !m.id) { m.id = uid(); }
+  m.updated = Date.now();
+  if (asNew) { newMap(m); }
+  else { pushUndo(); M.root = m.root; M.tags = m.tags; M.qc = m.qc || {}; touch(); fitted = null; render(); }
+  closeDialog(); if (msg) toast(msg); return true;
+}
+$("#opNew").onclick = () => $("#opText").value.trim() ? importText($("#opText").value, true, "Imported as a new map") : toast("Paste an outline first, or choose a file");
+$("#opReplace").onclick = () => $("#opText").value.trim() ? importText($("#opText").value, false, "Map replaced") : toast("Paste an outline first, or choose a file");
+$("#opExample").onclick = () => { closeDialog(); newMap(exampleMap()); toast("Example loaded"); };
+$("#opFile").onclick = () => $("#fileIn").click();
+$("#fileIn").onchange = e => { openFile(e.target.files[0]); e.target.value = ""; };
+async function openFile(file) {
+  if (!file) return;
+  if (!/\.(json|md|markdown|txt)$/i.test(file.name) && !/^(text\/|application\/json)/.test(file.type)) return toast("Choose a .mindmap.json or Markdown file");
+  try { importText(await file.text(), true, `Opened ${file.name}`); } catch { toast("Couldn’t read that file"); }
+}
+window.addEventListener("dragover", e => { if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault(); });
+window.addEventListener("drop", e => { const f = e.dataTransfer?.files?.[0]; if (f) { e.preventDefault(); openFile(f); } });
+const fileBase = () => (oneLine(M.root.text) || "mind-map").replace(/[\\/:*?"<>|]+/g, "").slice(0, 70).trim();
+// Hand a file to the viewer: the artifact's downloads capability inside Claude, a normal download elsewhere.
+// (A variable, so the tests can catch files instead.)
+let download = async (name, blob, done) => {
+  const dl = window.claude?.use ? await window.claude.use("downloads") : null;
+  if (dl) {
+    try { await dl.save({ filename: name, data: blob }); toast(done); }
+    catch (e) { if (e?.code !== "declined") toast("Couldn’t save the file. Try again."); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(done);
+};
+$("#saveBtn").onclick = () => { commitEdit(); const name = fileBase() + ".mindmap.json"; download(name, new Blob([JSON.stringify(fileObj(), null, 2)], { type: "application/json" }), `Saved ${name}`); };
+
+/* ---------------- export ---------------- */
+// Each step's menu: Markdown first (recommended), and a note on what each format can't do.
+const EXPORTS = {
+  map: [["md", "Markdown", "Opens again in Mindmap Studio with tasks and tags. Colours, sides and folds aren’t kept."],
+    ["html", "HTML", "A picture of the map on a web page. For viewing and printing; it can’t be opened again."],
+    ["png", "PNG", "An image for slides and documents. It can’t be edited."],
+    ["csv", "CSV", "One row per node, for spreadsheets. Structure as columns, not a picture."]],
+  tasks: [["md", "Markdown", "The task table, for documents, GitHub or Notion. Holds the tasks shown."],
+    ["html", "HTML", "A formatted page to share or print. It can’t be opened again."],
+    ["csv", "CSV", "Imports into Excel, Todoist or Asana. Tasks only: the map isn’t included."]],
+  board: [["md", "Markdown", "The three columns as lists. Holds the cards shown."],
+    ["html", "HTML", "A snapshot of the board. Cards can’t be moved in the copy."],
+    ["csv", "CSV", "Imports into Excel, Todoist or Asana. Tasks only: the map isn’t included."]],
+};
+const exportBtn = $("#exportBtn"), exportMenu = $("#exportMenu");
+function toggleExport(open = exportMenu.hidden) {
+  if (open) {
+    commitEdit();
+    const s = step(), head = s !== "map" && fActive() ? `<div class="mhead">Filtered: ${shownTasks().length} of ${allTasks().length} tasks</div>` : "";
+    exportMenu.innerHTML = head + EXPORTS[s].map(([f, t, d], i) => `<button role="menuitem" data-format="${f}"><b>${t}${i === 0 ? "<em>Recommended</em>" : ""}</b><span>${d}</span></button>`).join("");
+  }
+  exportMenu.hidden = !open; exportBtn.setAttribute("aria-expanded", open);
+  if (open) exportMenu.querySelector("button").focus();
+}
+exportBtn.onclick = () => toggleExport();
+exportMenu.addEventListener("click", e => { const b = e.target.closest("[data-format]"); if (b) { toggleExport(false); exportBtn.focus(); exportAs(b.dataset.format); } });
+exportMenu.addEventListener("keydown", e => {
+  const items = [...exportMenu.querySelectorAll("button")], i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); toggleExport(false); exportBtn.focus(); }
+  else if (e.key === "Tab") toggleExport(false);
+});
+document.addEventListener("pointerdown", e => { if (!exportMenu.hidden && !e.target.closest(".menu-wrap")) toggleExport(false); });
+// CSV: UTF-8 with a byte-order mark; text starting with = + - @ gets a leading ' so a spreadsheet never runs it.
+const csvCell = v => { let s = String(v ?? ""); if (/^[=+\-@]/.test(s)) s = "'" + s; return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const csv = rows => "\uFEFF" + rows.map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+const TASK_COLS = ["Task", "Branch", "Path", "Status", "Delegated to", "Due", "Tags"];
+const taskCsvRow = n => [n.text, oneLine(find(n.id).main.text), pathOf(n.id).slice(1).join(" › "), STAT_TXT[n.task.status], n.task.people.join("; "), n.task.due, n.tags.map(tagName).join("; ")];
+function buildCsv(s) {
+  if (s === "map") {
+    const rows = [["Path", "Level", "Text", "Tags", "Task", "Status", "Delegated to", "Due"]];
+    (function w(n, d, path) {
+      const p = d ? [...path, oneLine(n.text)] : [];
+      rows.push([path.join(" › "), d, n.text, n.tags.map(tagName).join("; "), n.task ? "Yes" : "", n.task ? STAT_TXT[n.task.status] : "", n.task?.people.join("; ") || "", n.task?.due || ""]);
+      (d === 0 ? index().clockwise : n.children).forEach(c => w(c, d + 1, d ? p : []));
+    })(M.root, 0, []);
+    return csv(rows);
+  }
+  const shown = shownTasks();
+  return s === "tasks" ? csv([TASK_COLS, ...shown.map(taskCsvRow)]) : csv([["Column", ...TASK_COLS], ...shown.map(n => [STAT_TXT[n.task.status], ...taskCsvRow(n)])]);
+}
+// A self-contained page in the Studio look, with the app name and version at the foot.
+function htmlPage(title, body) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=Patrick+Hand&family=Patrick+Hand+SC&family=Source+Serif+4:wght@400;700&display=swap">
+<style>body{margin:0;background:#F1F1EF;color:#2B2B2A;font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif}main{max-width:1180px;margin:32px auto;padding:32px 36px;background:#fff;border:1px solid #DEDDD8;border-radius:4px}
+h1{font-family:"Source Serif 4",Georgia,serif;font-size:26px;margin:0 0 4px}h2{font-family:"Source Serif 4",Georgia,serif;font-size:18px;margin:26px 0 8px}.k{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#2F5FD0}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6E6D69;border-bottom:2px solid #2B2B2A;padding:6px 8px}td{padding:7px 8px;border-bottom:1px solid #DEDDD8;vertical-align:top}
+.todo{background:#FBEEEC}.doing{background:#FBF4E4}.done{background:#EDF6EF}.od{color:#C93A31}.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.col{border:1px solid #DEDDD8;border-radius:8px;padding:12px}
+.card{border:1px solid #DEDDD8;border-radius:7px;padding:8px 10px;margin-bottom:8px;background:#fff}.card b{display:block;font:18px/1.25 "Patrick Hand",cursive;font-weight:400}.card span{font-size:12px;color:#6E6D69}
+.col h3{font:400 21px "Patrick Hand SC",cursive;margin:0 0 10px}img{max-width:100%;height:auto}footer{margin-top:28px;font-size:12px;color:#6E6D69}</style></head>
+<body><main>${body}<footer>Made with Mindmap Studio v${APP_VERSION}</footer></main></body></html>`;
+}
+function tasksHtml() {
+  const shown = shownTasks();
+  let b = `<div class="k">Tasks${fActive() ? ` · filtered: ${shown.length} of ${allTasks().length}` : ""}</div><h1>${esc(M.title || "Untitled map")}</h1>`;
+  for (const m of index().clockwise) {
+    const mine = shown.filter(n => find(n.id).main === m); if (!mine.length) continue;
+    b += `<h2>${esc(oneLine(m.text))}</h2><table><tr><th>Status</th><th>Task</th><th>Where</th><th>Delegated to</th><th>Due</th><th>Tags</th></tr>` +
+      mine.map(n => { const c = taskCells(n); return `<tr class="${n.task.status}">${c.map((x, i) => `<td${i === 4 && overdue(n) ? ' class="od"' : ""}>${esc(x).replace(/\n/g, "<br>")}</td>`).join("")}</tr>`; }).join("") + `</table>`;
+  }
+  return htmlPage(M.title + " tasks", b);
+}
+function boardHtml() {
+  const shown = shownTasks();
+  return htmlPage(M.title + " board", `<div class="k">Board${fActive() ? ` · filtered: ${shown.length} of ${allTasks().length}` : ""}</div><h1>${esc(M.title || "Untitled map")}</h1><div class="cols">` + STATS.map(s => {
+    const c = shown.filter(n => n.task.status === s);
+    return `<div class="col ${s}"><h3>${STAT_TXT[s]} (${c.length})</h3>${c.map(n => `<div class="card"><b>${esc(n.text)}</b><span>${esc([oneLine(find(n.id).main.text), n.task.people.join(", "), fmtDate(n.task.due), ...n.tags.map(t => "#" + tagName(t))].filter(Boolean).join(" · "))}</span></div>`).join("")}</div>`;
+  }).join("") + `</div>`);
+}
+async function exportAs(f) {
+  const s = step(), base = fileBase() + (s === "map" ? "" : "-" + s);
+  if (f === "md") return download(base + ".md", new Blob([s === "map" ? mapMarkdown() : s === "tasks" ? tasksMarkdown() : boardMarkdown()], { type: "text/markdown" }), "Markdown exported");
+  if (f === "csv") return download(base + ".csv", new Blob([buildCsv(s)], { type: "text/csv" }), "CSV exported");
+  if (f === "html" && s !== "map") return download(base + ".html", new Blob([s === "tasks" ? tasksHtml() : boardHtml()], { type: "text/html" }), "HTML exported");
+  await withSketchPng(async blob => {
+    if (f === "png") return download(base + ".png", blob, "PNG exported");
+    const url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+    return download(base + ".html", new Blob([htmlPage(M.title, `<h1>${esc(M.title || "Untitled map")}</h1><img alt="${esc(M.title)}" src="${url}" style="width:${blob.cssWidth}px">`)], { type: "text/html" }), "HTML exported");
+  });
+}
+
+/* ---------------- PNG ---------------- */
+// Redraw the map onto a canvas: the ink comes from the SVG, and each line of text is placed exactly
+// where the browser wrapped it. Always light paper, with no selection, filter fading or animation.
+function lineBoxes(el) {
+  const out = [], r = document.createRange(), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let tn;
+  while ((tn = w.nextNode())) {
+    const s = tn.data;
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === "\n") continue;
+      r.setStart(tn, i); r.setEnd(tn, i + 1);
+      const rs = r.getClientRects(), b = rs[rs.length - 1]; if (!b) continue;
+      const L = out[out.length - 1];
+      if (L && Math.abs(b.top - L.top) < b.height * .5) { L.text += s[i]; L.right = Math.max(L.right, b.right); }
+      else if (s[i] !== " ") out.push({ text: s[i], left: b.left, right: b.right, top: b.top, bottom: b.bottom });
+    }
+  }
+  return out;
+}
+async function buildPng() {
+  const wr = world.getBoundingClientRect(), k = vp.k, toW = (x, y) => [(x - wr.left) / k, (y - wr.top) / k];
+  const targets = [];
+  for (const el of els.values()) {
+    targets.push(el.querySelector(".txt"));
+    if (!M.view.simplify) el.querySelectorAll(".meta > span").forEach(x => targets.push(x));
+    const more = el.querySelector(".more"); if (!more.hidden) targets.push(more);
+  }
+  const items = targets.filter(el => el.getClientRects().length && el.textContent.trim()).map(el => ({ el, lines: lineBoxes(el) }));
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const grow = (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
+  for (const p of Object.values(pos)) grow(p.x, p.y, p.x + p.w, p.y + p.h);
+  const PAD = 36; x0 -= PAD; y0 -= PAD; x1 += PAD; y1 += PAD;
+  const W = x1 - x0, H = y1 - y0, S = Math.min(2.5, 9000 / Math.max(W, H));
+  const cv = document.createElement("canvas"); cv.width = Math.round(W * S); cv.height = Math.round(H * S);
+  const ctx = cv.getContext("2d"); ctx.scale(S, S); ctx.translate(-x0, -y0);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--paper").trim() || "#F1F1EF"; ctx.fillRect(x0, y0, W, H);
+  const clone = svg.cloneNode(true); clone.setAttribute("xmlns", "http://www.w3.org/2000/svg"); clone.setAttribute("viewBox", `0 0 ${bounds.w} ${bounds.h}`);
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" }));
+  await new Promise((res, rej) => { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, bounds.w, bounds.h); res(); }; img.onerror = rej; img.src = url; });
+  URL.revokeObjectURL(url);
+  ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  for (const { el, lines } of items) {
+    const cs = getComputedStyle(el), upper = cs.textTransform === "uppercase";
+    ctx.fillStyle = cs.color; ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    if ("letterSpacing" in ctx) ctx.letterSpacing = cs.letterSpacing === "normal" ? "0px" : cs.letterSpacing;
+    for (const l of lines) { const [x, ya] = toW(l.left, l.top), [, yb] = toW(l.right, l.bottom); ctx.fillText(upper ? l.text.toUpperCase() : l.text.trimEnd(), x, (ya + yb) / 2); }
+  }
+  return new Promise(res => cv.toBlob(b => { if (b) b.cssWidth = Math.round(W); res(b); }, "image/png"));
+}
+async function withSketchPng(use) {
+  if (exporting) return;
+  const txt = exportBtn.querySelector(".txt"); exportBtn.disabled = true; txt.textContent = "Preparing…";
+  const root = document.documentElement, prevTheme = root.getAttribute("data-theme"), prevSel = selected, prevMode = mode();
+  exporting = true;
+  try {
+    commitEdit(); selected = null; M.view.mode = "sketch";
+    root.setAttribute("data-theme", "light"); themeCache = null; inkCache.clear();
+    if (document.fonts?.ready) await document.fonts.ready;
+    document.body.classList.add("no-anim"); render(); draw();
+    await use(await buildPng());
+  } catch { toast("Couldn’t create the image. Try again."); }
+  finally {
+    exporting = false; document.body.classList.remove("no-anim");
+    if (prevTheme === null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", prevTheme);
+    themeCache = null; inkCache.clear(); M.view.mode = prevMode; selected = prevSel; render();
+    exportBtn.disabled = false; txt.textContent = "Export";
+  }
+}
+
+/* ---------------- hints & checks ---------------- */
+// Each item: { id, t, tip, auto? }. auto() returns { ok, msg, ids } where ids are the nodes a "Check" jumps to.
+// Ticks are stored on the map as M.qc[id] = true.
+const NONVERBS = new Set(["the", "a", "an", "new", "our", "my", "all", "more", "better", "next", "first", "final", "initial", "weekly", "monthly", "team", "project", "customer"]);
+const res = (bad, ok, badMsg) => bad.length ? { ok: false, ids: bad, msg: badMsg(bad.length) } : { ok: true, msg: ok };
+const openTasks = () => allTasks().filter(n => n.task.status !== "done");
+const QC = [
+  { sec: "Map", items: [
+    { id: "m-centre", t: "The centre topic says what the map is about", tip: "A short phrase or question everyone would recognise.", auto: () => res(M.root.text.trim() ? [] : [M.root.id], "Looks fine", () => "No centre topic yet") },
+    { id: "m-two", t: "There are at least two main branches", tip: "A map with one branch is a list. Add the other big themes.", auto: () => res(M.root.children.length >= 2 ? [] : [M.root.id], "Looks fine", () => "Fewer than two") },
+    { id: "m-seven", t: "No node has more than seven direct children", tip: "Group long lists under a few sub-themes so they stay readable.", auto: () => { const b = []; walk(M.root, n => { if (n.children.length > 7) b.push(n.id); }); return res(b, "Looks fine", c => `${c} node${c > 1 ? "s" : ""} with more than seven`); } },
+    { id: "m-empty", t: "No nodes are empty", tip: "Give every node a few words, or delete it.", auto: () => { const b = []; walk(M.root, (n, d) => { if (d && !n.text.trim()) b.push(n.id); }); return res(b, "Looks fine", c => `${c} empty`); } },
+    { id: "m-words", t: "Each main branch says one idea in a few words", tip: "Short labels make the map easy to scan. Detail belongs further out." },
+  ] },
+  { sec: "Tasks", items: [
+    { id: "t-branch", t: "Every main branch has a task, or is for reference only", tip: "A branch with no tasks may be missing the work it needs.", auto: () => res(M.root.children.filter(m => { let t = false; walk(m, n => { if (n.task) t = true; }); return !t; }).map(m => m.id), "Looks fine", c => `${c} branch${c > 1 ? "es" : ""} without tasks`) },
+    { id: "t-owner", t: "Every open task is delegated to someone", tip: "Name at least one person for each task that isn’t done.", auto: () => res(openTasks().filter(n => !n.task.people.length).map(n => n.id), "Looks fine", c => `${c} task${c > 1 ? "s" : ""} with no one`) },
+    { id: "t-due", t: "Every open task has a due date", tip: "A date makes it clear when the work is needed.", auto: () => res(openTasks().filter(n => !n.task.due).map(n => n.id), "Looks fine", c => `${c} task${c > 1 ? "s" : ""} with no date`) },
+    { id: "t-overdue", t: "Nothing is overdue", tip: "Finish, re-plan or re-date anything past its due date.", auto: () => res(allTasks().filter(overdue).map(n => n.id), "Looks fine", c => `${c} overdue`) },
+    { id: "t-verb", t: "Task names start with a verb", tip: () => { const b = allTasks().filter(n => NONVERBS.has((n.text.trim().split(/\s+/)[0] || "").toLowerCase())); return "For example “Book”, “Draft” or “Agree”." + (b.length ? ` Have a look at: ${b.slice(0, 4).map(n => `“${oneLine(n.text)}”`).join(", ")}.` : ""); } },
+    { id: "t-load", t: "No one has more than five open tasks", tip: "Spread the work, or agree what can wait.", auto: () => { const over = peopleIn(M).filter(p => openTasks().filter(n => n.task.people.some(x => x.toLowerCase() === p.toLowerCase())).length > 5); return over.length ? { ok: false, ids: openTasks().filter(n => n.task.people.some(x => over.some(o => o.toLowerCase() === x.toLowerCase()))).map(n => n.id), msg: over.join(", ") } : { ok: true, msg: "Looks fine" }; } },
+  ] },
+  { sec: "Tags", items: [
+    { id: "g-dup", t: "No two tags are near-duplicates", tip: "Merge tags that mean the same thing in Manage tags.", auto: () => { const d = []; M.tags.forEach((a, i) => M.tags.slice(i + 1).forEach(b => { if (near(a.name, b.name)) d.push(`${a.name} / ${b.name}`); })); return d.length ? { ok: false, tags: true, msg: d.slice(0, 2).join(", ") } : { ok: true, msg: "Looks fine" }; } },
+    { id: "g-unused", t: "No tags are unused", tip: "Delete tags nobody uses so the list stays short.", auto: () => { const c = tagCounts(), u = M.tags.filter(t => !c[t.id]); return u.length ? { ok: false, tags: true, msg: `${u.length} unused` } : { ok: true, msg: "Looks fine" }; } },
+  ] },
+];
+const qcEl = $("#qc");
+function renderQC() {
+  let total = 0, done = 0;
+  $("#qcBody").innerHTML = QC.map(s => {
+    const items = s.items.map(it => {
+      const r = it.auto?.(), ok = r ? r.ok : !!M.qc[it.id]; total++; if (ok || M.qc[it.id]) done++;
+      const tip = typeof it.tip === "function" ? it.tip() : it.tip;
+      return `<label class="qc-item${M.qc[it.id] || r?.ok ? " done" : ""}"><input type="checkbox" data-q="${it.id}" ${M.qc[it.id] || r?.ok ? "checked" : ""} ${r ? "disabled" : ""}><span class="t">${esc(it.t)}</span><span class="tip">${esc(tip)}</span>` +
+        (r ? `<span class="auto">${r.ok ? `<span class="pill ok">${esc(r.msg)}</span>` : `<button class="pill bad" data-go="${it.id}">Check · ${esc(r.msg)}</button>`}</span>` : "") + `</label>`;
+    }).join("");
+    return `<section class="qc-sec"><h3>${s.sec}</h3>${items}</section>`;
+  }).join("");
+  $("#qcCount").textContent = `${done} of ${total} done`; $("#qcBar").style.width = (total ? done / total * 100 : 0) + "%";
+}
+$("#qcBody").addEventListener("change", e => { const q = e.target.dataset.q; if (q) { M.qc[q] = e.target.checked; touch(); renderQC(); } });
+$("#qcBody").addEventListener("click", e => {
+  const b = e.target.closest("[data-go]"); if (!b) return; e.preventDefault();
+  const it = QC.flatMap(s => s.items).find(x => x.id === b.dataset.go), r = it.auto();
+  if (r.tags) return openTagManager();
+  if (r.ids?.length) goToMap(r.ids[0]);
+});
+function openQC() { qcEl.hidden = false; $("#qcBtn").setAttribute("aria-expanded", "true"); renderQC(); $("#qcClose").focus(); }
+function closeQC() { qcEl.hidden = true; $("#qcBtn").setAttribute("aria-expanded", "false"); $("#qcBtn").focus(); }
+$("#qcBtn").onclick = () => qcEl.hidden ? openQC() : closeQC();
+$("#qcClose").onclick = closeQC;
+$("#qcReset").onclick = () => { M.qc = {}; touch(); renderQC(); };
+qcEl.addEventListener("keydown", e => { if (e.key === "Escape") closeQC(); });
+
+/* ---------------- saving ---------------- */
+// As in Issue Tree Studio: saved 700 ms after the last change to localStorage, and to the user's
+// Claude account (one document per map) when the page runs as an artifact. Deletions sync as tombstones.
+let saveT, col = null;
+const cloudBusy = new Set(), cloudAgain = new Set();
+const setSync = s => { $("#sync").textContent = s; };
+function scheduleSave() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => { if (!saveLocal()) setSync("Couldn’t save in this browser: storage may be full"); pushCloud(M.id); }, 700);
+}
+async function pushCloud(id) {
+  if (!col) return;
+  if (cloudBusy.has(id)) { cloudAgain.add(id); return; }
+  cloudBusy.add(id);
+  try {
+    const m = store.maps[id];
+    if (m) await col.doc(id).set({ json: JSON.stringify(m), title: oneLine(m.root.text).slice(0, 140), updated: m.updated });
+    else await col.doc(id).set({ deleted: true, updated: store.deleted[id] || Date.now() });
+    setSync("Saved to your account");
+  } catch { setSync("Saved in this browser only"); }
+  finally { cloudBusy.delete(id); if (cloudAgain.delete(id)) pushCloud(id); }
+}
+// Merge the account's maps into this browser's store: for each id the newer side wins, edit or deletion.
+function mergeStores(st, remote, busyId) {
+  const when = x => (x && x.updated) || 0, upload = []; let changed = false;
+  for (const [id, r] of Object.entries(remote)) {
+    if (id === busyId) continue;
+    const local = st.maps[id];
+    if (r.deleted) {
+      if (local && when(local) > r.updated) continue;
+      if (local) { delete st.maps[id]; changed = true; }
+      st.deleted[id] = Math.max(st.deleted[id] || 0, r.updated);
+    } else if ((st.deleted[id] || 0) >= when(r)) upload.push(id);
+    else if (when(local) < when(r)) { st.maps[id] = normalise(r); delete st.deleted[id]; changed = true; }
+  }
+  for (const [id, m] of Object.entries(st.maps)) { const r = remote[id]; if ((!r || when(r) < when(m)) && (m.root.text || m.root.children.length)) upload.push(id); }
+  return { changed, upload };
+}
+async function initCloud() {
+  if (!window.claude?.use || TEST) return;
+  try {
+    const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    if (!db || !user) return;
+    const me = await user.id(); if (!me) return;
+    const c = db.collection("data/users/" + me), snapq = await c.get(); col = c;
+    const remote = {};
+    snapq.docs.forEach(d => { try { const v = d.data(); remote[d.id] = v.deleted ? { deleted: true, updated: v.updated || 0 } : JSON.parse(v.json); } catch {} });
+    // a blank first map is dropped once the account holds real maps
+    if (Object.values(remote).some(r => !r.deleted)) for (const [id, m] of Object.entries(store.maps)) if (!m.root.text && !m.root.children.length && id !== M.id) delete store.maps[id];
+    const { changed, upload } = mergeStores(store, remote, editing ? M.id : null);
+    upload.forEach(pushCloud);
+    if (changed) {
+      if (!Object.keys(store.maps).length) { const b = blankMap(); store.maps[b.id] = b; }
+      if (!M.root.text && !M.root.children.length && Object.keys(store.maps).length > 1) { delete store.maps[M.id]; store.current = newestId(); }
+      if (!store.maps[store.current]) store.current = newestId();
+      switchTo(store.current); saveLocal();
+    }
+    setSync("Saved to your account");
+  } catch { setSync("Saved in this browser only"); }
+}
+
+/* ---------------- boot ---------------- */
+const rerender = () => { themeCache = null; inkCache.clear(); if (step() === "map" && mode() === "sketch") draw(); };
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", rerender); } catch {}
+new MutationObserver(rerender).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+window.addEventListener("resize", () => { if (step() === "map") applyVP(); });
+if (TEST) window.__mindmapStudio = {
+  get map() { return M; }, get store() { return store; }, get selected() { return selected; }, get filter() { return F; },
+  get undoDepth() { return undoStack.length; }, get pos() { return pos; }, get inkCount() { return svg.childNodes.length; },
+  index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
+  createTag, addTag, tagOps, near, tkey, matches, keepSet, setFilter, quickFilter, allTasks, shownTasks, overdue, fmtDate,
+  mapMarkdown, tasksMarkdown, boardMarkdown, parseMarkdown, readAny, fileObj, buildCsv, tasksHtml, boardHtml, exportAs, buildPng, withSketchPng,
+  exampleMap, blankMap, newMap, switchTo, importText, openPicker, openDetails, openCtx, openTagManager, renderQC, QC, mergeStores, goToMap,
+  set downloader(fn) { download = fn; }, clearFilter() { F = { tags: new Set(), people: new Set(), status: new Set() }; saveFilter(); render(); },
+};
+$("#appVersion").textContent = "v" + APP_VERSION; $("#appVersion").title = "Version " + APP_VERSION;
+refreshPeople();
+render();
+if (!M.root.text && !M.root.children.length && step() === "map" && mode() === "sketch" && !TEST) editNode(M.root.id);
+if (document.fonts?.ready) document.fonts.ready.then(() => { if (step() === "map" && mode() === "sketch") { renderSketch(); if (!M.root.children.length) fit(); } });
+initCloud();
+})();
+</script>

@@ -471,7 +471,8 @@ body.no-anim *{transition:none!important}
 // - State: `store` holds every map and `M` is the map on screen. A map is
 //   { id, title, updated, view, tags: [{ id, name }], root, qc }. Every node is
 //   { id, text, children, tags: [tagId], collapsed?, task?: { status, people, due } }, and main branches
-//   (the centre's children) also carry side ("auto" | "left" | "right") and colour (a palette name).
+//   (the centre's children) also carry side ("left" | "right") and colour (a palette name). Any node may
+//   carry offset: [dx, dy] when it has been dragged to a place of its own.
 // - Every change to the map goes through mutate(fn): it snapshots the map for undo, runs fn, then
 //   re-renders and schedules a save. The Map, Tasks and Board steps are three views of the same data.
 // - Positions, sides and clockwise order are never stored: they are worked out from the structure.
@@ -480,7 +481,7 @@ const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 // The app's version, shown after its name and on exported pages: raise the minor number for new
 // features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 const FORMAT = 1;
 const TEST = /[?&]test\b/.test(location.search);   // ?test is used by tests/run.html and keeps its data apart
 const LS = TEST ? "mindmap-studio.test" : "mindmap-studio.v1", LS_F = LS + ".filters";
@@ -574,10 +575,13 @@ function normalise(m) {
 }
 // Main branches always have a side and a colour. A new or "auto" colour takes the first palette colour
 // no other branch uses; once all eight are taken the palette repeats.
+// Sides are fixed once chosen, so adding a branch never moves the others (1.2). A side left as "auto" (by an
+// older file or an import) is settled here once, balancing the two sides in reading order.
 function fixMains(m = M) {
   const mains = m.root.children;
+  let need = Math.max(0, Math.ceil(mains.length / 2) - mains.filter(x => x.side === "right").length);
   for (const n of mains) {
-    if (!["auto", "left", "right"].includes(n.side)) n.side = "auto";
+    if (n.side !== "left" && n.side !== "right") n.side = need-- > 0 ? "right" : "left";
     if (!PALETTE.includes(n.colour)) n.colour = nextColour(mains.filter(x => x !== n && PALETTE.includes(x.colour)));
   }
 }
@@ -666,14 +670,23 @@ const ops = {
   add(parentId, at, props = {}) {
     const p = find(parentId).n, n = mk("", [], props);
     if (p.collapsed) p.collapsed = false;
-    if (p === M.root) Object.assign(n, { side: props.side || "auto", colour: nextColour(p.children) });
+    if (p === M.root) {
+      // a new main branch goes on the side with fewer branches (right when equal), at the bottom of that side
+      const side = props.side || (p.children.filter(x => x.side === "right").length <= p.children.filter(x => x.side === "left").length ? "right" : "left");
+      Object.assign(n, { side, colour: nextColour(p.children) });
+      if (at == null && side === "left") { const first = p.children.findIndex(x => x.side === "left"); if (first >= 0) at = first; }
+    }
     p.children.splice(at ?? p.children.length, 0, n);
     touchModel(); return n.id;
   },
   child(id) { return ops.add(id); },
+  // A sibling appears just below the node as drawn. Left-side main branches are drawn bottom to top,
+  // so there "below" is one place earlier.
   sibling(id) {
     const f = find(id); if (!f.p) return ops.child(id);
-    return ops.add(f.p.id, f.p.children.indexOf(f.n) + 1, f.p === M.root && f.n.side !== "auto" ? { side: f.n.side } : {});
+    const i = f.p.children.indexOf(f.n);
+    if (f.p === M.root) return ops.add(f.p.id, f.n.side === "left" ? i : i + 1, { side: f.n.side });
+    return ops.add(f.p.id, i + 1);
   },
   del(id) {
     const f = find(id); if (!f || !f.p) return;
@@ -682,14 +695,14 @@ const ops = {
   },
   // Move a node under a new parent at an index; refuses to move a node into its own sub-branch.
   moveTo(id, parentId, at) {
-    const f = find(id); if (!f || !f.p || id === parentId || isAnc(id, parentId)) return;
+    const f = find(id), oldSide = f?.side; if (!f || !f.p || id === parentId || isAnc(id, parentId)) return;
     const from = f.p.children, i = from.indexOf(f.n), to = find(parentId).n;
     from.splice(i, 1);
     if (from === to.children && at > i) at--;
     to.children.splice(Math.max(0, Math.min(at, to.children.length)), 0, f.n);
     delete f.n.offset;   // a node given a new place in the structure joins it tidily
     if (to !== M.root) { delete f.n.side; delete f.n.colour; }
-    else if (f.p !== M.root) { f.n.side = "auto"; f.n.colour = nextColour(to.children.filter(x => x !== f.n)); }
+    else if (f.p !== M.root) { f.n.side = oldSide === "l" ? "left" : "right"; f.n.colour = nextColour(to.children.filter(x => x !== f.n)); }
     if (to.collapsed) to.collapsed = false;
     touchModel(); return id;
   },
@@ -1180,6 +1193,23 @@ stage.addEventListener("pointerup", e => {
   if (press) { clearTimeout(press.lp); const p = press; press = null; if (p.wasSel) editNode(p.id); else { commitEdit(); selected = p.id; render(); } }
 });
 stage.addEventListener("pointercancel", () => { if (drag) endDrag(false); pan = null; press = null; stage.classList.remove("panning"); });
+// Double-click empty canvas: a new main branch appears right there, on that side of the centre, slotted
+// among that side's branches by height so Tidy keeps the order you see. One undo step; typing starts at once.
+stage.addEventListener("dblclick", e => { if (!e.target.closest(".node, .zoom")) spawnAt(e.clientX, e.clientY); });
+function spawnAt(cx, cy) {
+  commitEdit();
+  const sr = stage.getBoundingClientRect(), toWorld = () => [(cx - sr.left - vp.x) / vp.k, (cy - sr.top - vp.y) / vp.k];
+  const [wx, wy] = toWorld(), rp = pos[M.root.id], side = wx < rp.x + rp.w / 2 ? "left" : "right";
+  const mains = M.root.children, same = mains.filter(m => m.side === side && pos[m.id]);
+  const lower = same.filter(m => pos[m.id].y + pos[m.id].h / 2 > wy);   // branches drawn below the click
+  const at = side === "right"
+    ? (lower.length ? mains.indexOf(lower[0]) : same.length ? mains.indexOf(same.at(-1)) + 1 : mains.length)
+    : (lower.length ? mains.indexOf(lower.at(-1)) + 1 : same.length ? mains.indexOf(same[0]) : mains.length);
+  const id = mutate(() => ops.add(M.root.id, at, { side }));
+  const [x, y] = toWorld(), b = base[id], p = pos[id];   // the view keeps still, so the click maps to the new layout
+  find(id).n.offset = [Math.round(x - p.w / 2 - b.x), Math.round(y - p.h / 2 - b.y)];
+  touch(); render(); editNode(id);
+}
 window.addEventListener("keydown", e => { if (e.key === "Escape" && drag) { e.stopPropagation(); endDrag(false); } }, true);
 function startDrag(id, e) {
   commitEdit();
@@ -1425,7 +1455,6 @@ function openCtx(id, x, y) {
     if (n.task) h += `<div class="row-sw"><span class="lb">Status</span><span class="stat3">${STATS.map(s => `<button data-c="st-${s}" aria-pressed="${n.task.status === s}">${STAT_TXT[s]}</button>`).join("")}</span></div>` + item("details", "Task details…");
     h += `<hr>` + item("tag", "Add tag…") + item("tags", "Manage tags…") + `<hr>`;
     h += `<div class="row-sw"><span class="lb">Colour</span>${PALETTE.map(c => `<button class="sw" data-c="col-${c}" style="--c:var(--b-${c})" aria-pressed="${f.main.colour === c}" title="${c[0].toUpperCase() + c.slice(1)}" aria-label="${c}"></button>`).join("")}<button class="sw auto" data-c="col-auto" title="Automatic" aria-label="Automatic colour"></button></div>`;
-    if (f.p === M.root && n.side !== "auto") h += item("autoside", "Automatic side");
     if (n.children.length) h += item("fold", n.collapsed ? "Unfold" : "Fold");
     h += `<hr>` + item("delete", "Delete", "⌫", "del");
   }
@@ -1439,7 +1468,6 @@ function openCtx(id, x, y) {
     else if (c.startsWith("col-")) mutate(() => { const main = find(id).main; main.colour = c === "col-auto" ? nextColour(M.root.children.filter(x => x !== main)) : c.slice(4); });
     else if (c === "tags") openTagManager();
     else if (c === "foldall" || c === "unfoldall") mutate(() => walk(M.root, (x, d) => { if (d > 0 && x.children.length) x.collapsed = c === "foldall"; }));
-    else if (c === "autoside") mutate(() => ops.setSide(id, "auto"));
     else if (c === "tidy") tidy();
     else act(c, id, anchor);
   });
@@ -2165,7 +2193,7 @@ window.addEventListener("resize", () => { if (step() === "map") applyVP(); });
 if (TEST) window.__mindmapStudio = {
   get map() { return M; }, get store() { return store; }, get selected() { return selected; }, get filter() { return F; },
   get undoDepth() { return undoStack.length; }, get pos() { return pos; }, get inkCount() { return svg.childNodes.length; },
-  get base() { return base; }, tidy, index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
+  get base() { return base; }, tidy, spawnAt, index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
   createTag, addTag, tagOps, near, tkey, matches, keepSet, setFilter, quickFilter, allTasks, shownTasks, overdue, fmtDate,
   mapMarkdown, tasksMarkdown, boardMarkdown, parseMarkdown, readAny, fileObj, buildCsv, tasksHtml, boardHtml, exportAs, buildPng, withSketchPng,
   exampleMap, blankMap, newMap, switchTo, importText, openPicker, openDetails, openCtx, openTagManager, renderQC, QC, mergeStores, goToMap,

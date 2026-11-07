@@ -12,6 +12,17 @@ When making a release:
 3. Add an entry here.
 4. Tag the commit.
 
+## 1.2 (7 November 2026)
+
+- **Double-click to add a branch.** Double-clicking empty canvas adds a main branch centred on that spot, ready to type. It is slotted among that side's branches by height, so Tidy keeps the order you see.
+- **Branches keep their sides.** Adding or removing a main branch no longer rebalances the map, so nothing jumps to the other side. Move a branch across with a drag or Alt+← / Alt+→.
+  - A new branch from the centre goes to the side with fewer branches (right when equal), at the bottom.
+  - Enter on a branch adds one directly below it, on the same side.
+  - "Automatic side" is gone from the right-click menu.
+  - Older files with automatic sides open looking the same, then stay fixed.
+- **Fix: overlaps after adding a branch.** Rebalancing could move a freely placed branch onto others. With sides fixed, that can't happen. A new test checks that Tidy never overlaps after random edits, free moves and new branches.
+- **Tests:** five new tests (43 in all). The test page now always loads a fresh copy of the app.
+
 ## 1.1 (5 November 2026)
 
 - **Typing replaces.** Editing a node starts with its whole text selected, so typing replaces it. An arrow key or a click places the cursor instead. Typing any character on a selected node starts editing straight away. Board cards behave the same when double-clicked.

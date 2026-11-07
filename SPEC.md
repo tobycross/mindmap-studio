@@ -85,8 +85,9 @@ A new map is a blank canvas with one box in the middle, the **centre topic**, sh
 ### 3.2 Layout
 
 - **Both sides.** Main branches (the children of the centre topic) sit on the right and left of the centre. Everything below a main branch grows outwards on that branch's side.
-- **Automatic balance.** By default the first half of the main branches (rounded up) goes on the right, top to bottom, and the rest on the left, bottom to top, so the map reads clockwise from the top right. Adding or removing a main branch rebalances the automatic ones.
-- **Choosing a side.** Dragging a main branch across the centre, or pressing Alt+← / Alt+→ on it, fixes it to that side. A fixed side is saved. "Automatic side" in the right-click menu of a main branch puts it back under automatic balance.
+- **Sides stay put** *(1.2)*. Every main branch has a fixed side, so adding or removing a branch never moves the others. The map reads clockwise from the top right: the right side top to bottom, then the left side bottom to top.
+- **Where a new main branch goes.** From the centre topic (Enter, Tab, + Branch), it goes to the side with fewer branches (the right when they are equal), at the bottom of that side. Enter on a main branch adds one directly below it, on the same side. A double-click on empty canvas puts one exactly there (see 3.4).
+- **Choosing a side.** Drag a main branch across the centre, or press Alt+← / Alt+→ on it, to move it to the other side. The side is saved.
 - **Spacing.** Sub-branches are laid out as a tidy tree on their side, with no overlaps. Positions are worked out from the structure every time it is drawn.
 - **Free placement and Tidy** *(1.1)*. A node dragged to empty canvas stays exactly where it is dropped, and its sub-branches travel with it. It keeps an offset from its tidy position, so new children still appear in order beside it and lines leave from whichever side faces them. **Tidy** (beside Fit at the bottom right, and in the centre topic's right-click menu) clears every offset and brings the whole map back into its tidy structure, as one undo step. A node moved to a new place in the structure (dropped on another node) joins it tidily.
 - **Motion.** Nodes glide to their new place when the map reflows (as cards do in Issue Tree Studio).
@@ -108,6 +109,7 @@ All of this is as in Issue Tree Studio unless stated:
 - **Add button.** A round "+" appears beside a node on hover, on its outer side, and adds a child.
 - **Drag.** Drag a node to reorder it among its siblings, to give it a new parent, or (for a main branch) to move it to the other side. Its sub-branches travel with it. A ghost card follows the pointer and the drop markers of Issue Tree Studio's Outline show where it will land: a bar above or below a node places it before or after, a dashed box makes it a child. Dropped on empty canvas, a node stays where it is dropped (see Free placement in 3.2); a main branch dropped across the centre also changes side. Escape cancels. Every drop is one undo step.
 - **Fold.** Folding a node hides everything below it. A dashed pill beside it shows how many nodes are hidden, for example "+5", and "+5 · 2 tasks" when tasks are among them. Clicking the pill unfolds it.
+- **Double-click to add** *(1.2)*. Double-clicking empty canvas adds a main branch centred on that spot, on that side of the centre, ready to type. It is slotted among that side's branches by height, so Tidy keeps the order you see. One undo step.
 - **Pan and zoom.** Drag on empty canvas to pan, pinch or ⌘ + scroll to zoom. The zoom controls at the bottom right are −, Fit and +, as in the other Studios.
 
 ### 3.5 Right-click menu
@@ -119,7 +121,7 @@ This is new to the Studio family, so it mirrors the node toolbar and adds nothin
 | Add | Add child (Tab) · Add sibling (Enter) |
 | Task | Make task / Remove task (Alt+T) · Status (To do, Doing and Done buttons in one row) · Task details… |
 | Tags | Add tag… · Manage tags… |
-| Branch | Colour (a row of eight swatches, plus Automatic) · Automatic side (main branches with a fixed side only) · Fold / Unfold |
+| Branch | Colour (a row of eight swatches, plus Automatic) · Fold / Unfold |
 | | Delete |
 
 - On the centre topic the menu shows Add branch, Manage tags and Fold all / Unfold all.
@@ -345,7 +347,7 @@ We chose JSON over Markdown for saving because a map holds a lot that isn't text
       {
         "id": "n1",
         "text": "Premises",
-        "side": "auto",
+        "side": "right",
         "colour": "teal",
         "collapsed": false,
         "tags": [],
@@ -364,7 +366,7 @@ We chose JSON over Markdown for saving because a map holds a lot that isn't text
 }
 ```
 
-- **`side`** (`"auto"`, `"left"` or `"right"`) and **`colour`** (a palette name, or `"auto"`) appear on main branches only.
+- **`side`** (`"left"` or `"right"`) and **`colour`** (a palette name) appear on main branches only. Files from 1.0 and 1.1 may say `"auto"`: such sides are settled once on opening, balancing the two sides in reading order, and then stay fixed.
 - **`task`** is present only on tasks. `status` is `"todo"`, `"doing"` or `"done"`. `due` is an ISO date, or it is left out.
 - **`tags`** on a node lists tag IDs from the library. Unknown IDs are dropped on open.
 - **`collapsed`** may appear on any node, and **`offset`** (`[dx, dy]`, from 1.1) on any node placed freely. Missing optional fields take their defaults.
@@ -536,7 +538,7 @@ For testing, **today is fixed at 2026-11-05**. The test page sets the app's cloc
 
 Figures the tests rely on:
 
-- **Nodes:** 23 (the centre topic plus 22). **Main branches:** 4, two on each side under automatic balance.
+- **Nodes:** 23 (the centre topic plus 22). **Main branches:** 4, two on each side.
 - **Tasks:** 9. To do 5, Doing 2, Done 2, Overdue 1 (Food hygiene registration).
 - **Open tasks by person:** Priya 3 (1 overdue), Alex 2, Sam 1, Jo 1.
 - **Tag library:** legal 2, suppliers 2, hiring 2, marketing 2, equipment 1, finance 1.
@@ -552,11 +554,11 @@ Run these in order in a fresh browser profile. Each step states what must be tru
 | --- | --- | --- |
 | AT-01 | Open the app for the first time. | One blank map on step 1 Map: a single box in the middle reading "What's on your mind?", ready for typing. No other nodes or worksheet. The footer reads "1 node · 0 tasks". |
 | AT-02 | Type "Open the Leeds store" and press Enter. | The centre topic shows the text, and a new main branch appears on the right in editing mode. The project picker shows "Open the Leeds store". |
-| AT-03 | Type "Premises", Enter, "People", Enter, "Launch marketing", Enter, "Money". | Four main branches: Premises and People on the right (top to bottom), Launch marketing and Money on the left (Money above Launch marketing, reading clockwise). Each has a different automatic colour. |
+| AT-03 | Type "Premises", Enter, "People", Enter, "Launch marketing", Enter, "Money". | Four main branches on the right, top to bottom in the order typed (each Enter adds one below the last, on the same side). Each has a different automatic colour. Dragging People and Money across the centre moves them to the left; adding another branch from the centre then never moves any of them. |
 | AT-04 | Select Premises and press Tab, then type "Sign the lease". | A child appears to the right of Premises, outlined in Premises' colour. |
 | AT-05 | Select Launch marketing and press Tab. | The new child appears to the **left** of Launch marketing. |
 | AT-06 | Select a node on the left side and press ←, then →. | ← moves to its first child (further left). → moves back to the parent. |
-| AT-07 | Press Alt+→ on Money. | Money moves to the right side and stays there after a reload. "Automatic side" in its right-click menu moves it back. |
+| AT-07 | Press Alt+→ on Money. | Money moves to the right side and stays there after a reload, and after adding new branches. Alt+← moves it back. |
 | AT-08 | Drag "Sign the lease" onto People, then press ⌘Z. | It becomes People's child with People's colour, then undo puts it back under Premises. |
 | AT-09 | Press Backspace in an empty new node. | The node is deleted, and selection moves to its parent. |
 
@@ -652,7 +654,7 @@ Run these in order in a fresh browser profile. Each step states what must be tru
 
 `tests/run.html` follows the other Studios: serve the folder (`python3 -m http.server 8766`) and open `http://localhost:8766/tests/run.html`. Tests use their own storage and freeze today at 2026-11-05. It covers:
 
-- **Model:** layout sides and automatic balance; clockwise ordering; every structural edit with undo (add, delete, indent, outdent, reorder, move, change side, fold).
+- **Model:** layout sides (fixed once chosen) and where new branches go; clockwise ordering; every structural edit with undo (add, delete, indent, outdent, reorder, move, change side, fold).
 - **Colour:** inheritance across a branch, automatic assignment, the toggle leaving data unchanged.
 - **Tasks:** flag and unflag, status cycle, Space toggle, overdue against the frozen date.
 - **Tags:** normalisation, the near-duplicate rules (one case each), rename, merge and delete, ID references surviving a rename.

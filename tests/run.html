@@ -16,7 +16,7 @@ iframe{width:1200px;height:760px;border:1px solid #ccc;margin-top:16px}
 <h1>Mindmap Studio tests</h1>
 <div id="sum">Running…</div>
 <ol id="out"></ol>
-<iframe id="app" src="../mindmap-studio.html?test"></iframe>
+<iframe id="app"></iframe>
 <script>
 const out = document.getElementById("out"), results = [];
 let A, W, D;   // the app handle, its window and its document
@@ -83,7 +83,7 @@ test("A new main branch gets an unused colour", () => {
   fresh();
   const id = A.mutate(() => A.ops.child(A.map.root.id)), used = A.map.root.children.slice(0, 4).map(m => m.colour);
   ok(!used.includes(A.find(id).n.colour), "colour is new");
-  eq(A.find(id).n.side, "auto");
+  eq(A.find(id).n.side, "right", "sides were equal, so it goes right");
 });
 test("Indent and outdent; outdenting to the centre keeps the side", () => {
   fresh();
@@ -100,11 +100,11 @@ test("Move: into a new parent, never into itself", () => {
   A.mutate(() => A.ops.moveTo(people, id, 0)); eq(A.find(people).p, A.map.root, "refused");
   A.undo(); A.undo(); eq(A.find(id).p.text, "Premises");
 });
-test("Side: fixed with Alt+arrow, automatic again from the menu", () => {
+test("Side: Alt+arrow moves a branch, and it stays there", () => {
   fresh();
   const m = node("Money").id;
   A.mutate(() => A.ops.setSide(m, "right")); eq(A.find(m).side, "r");
-  A.mutate(() => A.ops.setSide(m, "auto")); eq(A.find(m).side, "l");
+  A.mutate(() => A.ops.child(A.map.root.id)); eq(A.find(m).side, "r", "adding a branch does not move it back");
 });
 test("Reorder as drawn: Alt+Up on a left branch moves it up the screen", () => {
   fresh(); A.render();
@@ -396,9 +396,76 @@ test("Tidy clears every free placement; a structural move joins tidily; JSON kee
   const b = Object.values(A.pos); ok(b.length > 20, "tidy layout after reload");
 });
 
+/* ---------- 1.2: stable sides, double-click to add, Tidy never overlaps ---------- */
+const sides = () => A.map.root.children.map(c => c.text + ":" + A.find(c.id).side);
+const named = () => sides().filter(x => !x.startsWith(":")).sort();
+test("Adding branches never moves existing branches to the other side", () => {
+  fresh();
+  const before = named();
+  const a = A.mutate(() => A.ops.child(A.map.root.id)), b = A.mutate(() => A.ops.child(A.map.root.id)), c = A.mutate(() => A.ops.child(A.map.root.id));
+  eq(named(), before, "the four original branches kept their sides");
+  eq([a, b, c].map(id => A.find(id).side), ["r", "l", "r"], "new ones go to the side with fewer, right when equal");
+  A.render();
+  const lefts = [...A.index().left].reverse().map(n => n.id);   // top to bottom as drawn
+  eq(lefts.at(-1), b, "a new left branch goes to the bottom of the left side");
+  eq(A.index().right.at(-1).id, c, "a new right branch goes to the bottom of the right side");
+});
+test("Enter on a main branch adds one just below it, on the same side", () => {
+  fresh(); A.render();
+  for (const name of ["Premises", "Launch marketing"]) {
+    const id = node(name).id, s = A.mutate(() => A.ops.sibling(id)); A.render();
+    eq(A.find(s).side, A.find(id).side, name + ": same side");
+    const order = (A.find(id).side === "r" ? A.index().right : [...A.index().left].reverse()).map(n => n.id);
+    eq(order.indexOf(s), order.indexOf(id) + 1, name + ": directly below");
+  }
+  eq(sides().filter(x => x.startsWith("People") || x.startsWith("Money")), ["People:r", "Money:l"], "others unmoved");
+});
+test("Double-click on empty canvas adds a main branch right there", async () => {
+  fresh(); A.render(); D.body.classList.add("no-anim");
+  const stage = D.getElementById("stage"), sr = stage.getBoundingClientRect(), x = sr.left + 170, y = sr.top + sr.height - 110;
+  ok(!D.elementFromPoint(x, y)?.closest(".node"), "empty spot");
+  const n0 = A.map.root.children.length, depth = A.undoDepth, before = named();
+  stage.dispatchEvent(new W.MouseEvent("dblclick", { clientX: x, clientY: y, bubbles: true }));
+  eq(A.map.root.children.length, n0 + 1); eq(A.undoDepth, depth + 1, "one undo step");
+  const nu = A.map.root.children.find(c => c.text === "");
+  eq(A.find(nu.id).side, "l", "left of the centre"); eq(named(), before, "nothing else moved side");
+  const r = D.querySelector(`.node[data-id="${nu.id}"]`).getBoundingClientRect();
+  ok(Math.abs(r.left + r.width / 2 - x) < 2 && Math.abs(r.top + r.height / 2 - y) < 2, "centred on the click");
+  ok(D.querySelector(`.node[data-id="${nu.id}"]`).classList.contains("editing"), "ready to type");
+  D.querySelector(`.node[data-id="${nu.id}"] .txt`).dispatchEvent(new W.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  A.tidy(); A.render();
+  eq([...A.index().left].reverse().at(-1).id, nu.id, "Tidy keeps it where it was put: bottom of the left side");
+  D.body.classList.remove("no-anim");
+});
+test("Tidy never overlaps, after random edits, free moves and new branches", () => {
+  let seed = 3; const rnd = n => (seed = seed * 16807 % 2147483647) % n;
+  const words = "alpha beta gamma delta a much longer label that wraps over two or three lines here".split(" ");
+  for (let t = 0; t < 12; t++) {
+    fresh();
+    for (let i = 0; i < 14; i++) {
+      const ids = [...A.index().map.keys()], p = ids[rnd(ids.length)];
+      const id = A.mutate(() => rnd(3) ? A.ops.child(p) : A.ops.sibling(p));
+      A.mutate(() => { A.find(id).n.text = Array.from({ length: 1 + rnd(7) }, () => words[rnd(words.length)]).join(" "); if (rnd(3) === 0) A.setTask(id, true); });
+      if (rnd(3) === 0) { const q = ids[1 + rnd(ids.length - 1)]; A.mutate(() => { A.find(q).n.offset = [rnd(300) - 150, rnd(300) - 150]; }); }
+    }
+    A.tidy(); A.render();
+    const b = Object.values(A.pos);
+    for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) {
+      const p = b[i], q = b[j];
+      ok(p.x + p.w <= q.x + .5 || q.x + q.w <= p.x + .5 || p.y + p.h <= q.y + .5 || q.y + q.h <= p.y + .5, "map " + t + ": boxes overlap after Tidy");
+    }
+  }
+});
+test("Older files with automatic sides open with the same layout, then stay fixed", () => {
+  const o = A.fileObj(A.exampleMap()); o.root.children.forEach(c => c.side = "auto");
+  const m = A.readAny(JSON.stringify(o));
+  eq(m.root.children.map(c => c.side), ["right", "right", "left", "left"]);
+});
+
 /* ---------- runner ---------- */
 async function run() {
   const fr = document.getElementById("app");
+  fr.src = "../mindmap-studio.html?test&v=" + Date.now();   // never a cached copy of the app
   await new Promise(r => fr.addEventListener("load", r, { once: true }));
   W = fr.contentWindow; D = W.document; W.__msToday = "2026-11-05";
   for (let i = 0; i < 50 && !W.__mindmapStudio; i++) await wait(50);

@@ -1,6 +1,6 @@
 # Mindmap Studio
 
-Version 1.2. The version shows after the app's name in the toolbar and on exported pages. It is set once, as `APP_VERSION` near the top of the script: raise the minor number for new features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
+Version 1.2.1. The version shows after the app's name in the toolbar and on exported pages. It is set once, as `APP_VERSION` near the top of the script: raise the minor number for new features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
 
 A single-page app for thinking a project through as a mind map and then running it, in three steps: branch out ideas on a hand-drawn map, flag any node as a task, then track those tasks in a table and on a board.
 

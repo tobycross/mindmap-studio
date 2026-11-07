@@ -481,7 +481,7 @@ const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 // The app's version, shown after its name and on exported pages: raise the minor number for new
 // features (1.0 → 1.1) and the last number for fixes only (1.0 → 1.0.1).
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.2.1";
 const FORMAT = 1;
 const TEST = /[?&]test\b/.test(location.search);   // ?test is used by tests/run.html and keeps its data apart
 const LS = TEST ? "mindmap-studio.test" : "mindmap-studio.v1", LS_F = LS + ".filters";
@@ -937,6 +937,18 @@ function theme() {
   }
   return themeCache;
 }
+// The curve from a parent box q to a child box b, as [x1, y1, c1x, c1y, c2x, c2y, x2, y2]. It runs side to
+// side when there is room between the boxes (always so in a tidy map), otherwise top to bottom, as when a
+// node is placed above or below its parent. Either way it stays in the gap, so it never crosses either box.
+function connector(q, b) {
+  const hGap = Math.max(b.x - (q.x + q.w), q.x - (b.x + b.w)), vGap = Math.max(b.y - (q.y + q.h), q.y - (b.y + b.h));
+  if (hGap >= 12 || vGap <= 0) {
+    const right = b.x + b.w / 2 >= q.x + q.w / 2, x1 = right ? q.x + q.w : q.x, y1 = q.y + q.h / 2, x2 = right ? b.x : b.x + b.w, y2 = b.y + b.h / 2, dx = x2 - x1;
+    return [x1, y1, x1 + dx * .5, y1, x2 - dx * .5, y2, x2, y2];
+  }
+  const down = b.y >= q.y + q.h, x1 = q.x + q.w / 2, y1 = down ? q.y + q.h : q.y, x2 = b.x + b.w / 2, y2 = down ? b.y : b.y + b.h, dy = y2 - y1;
+  return [x1, y1, x1, y1 + dy * .5, x2, y2 - dy * .5, x2, y2];
+}
 const seedOf = (id, k) => { let h = k; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 2e9 + 1; };
 const rr = (x, y, w, h, r) => `M${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h - r} Q${x + w},${y + h} ${x + w - r},${y + h} H${x + r} Q${x},${y + h} ${x},${y + h - r} V${y + r} Q${x},${y} ${x + r},${y} Z`;
 function draw() {
@@ -969,9 +981,7 @@ function draw() {
     if (f.p) {
       const q = box.get(f.p.id);
       if (q) {
-        // leave from whichever side faces the child, wherever it was dragged
-        const right = b.x + b.w / 2 >= q.x + q.w / 2, x1 = right ? q.x + q.w : q.x, y1 = q.y + q.h / 2, x2 = right ? b.x : b.x + b.w, y2 = b.y + b.h / 2, dx = x2 - x1;
-        const d = `M${x1},${y1} C${x1 + dx * .5},${y1} ${x2 - dx * .5},${y2} ${x2},${y2}`, sw = f.d === 1 ? 3 : f.d === 2 ? 1.9 : 1.35;
+        const c = connector(q, b), d = `M${c[0]},${c[1]} C${c[2]},${c[3]} ${c[4]},${c[5]} ${c[6]},${c[7]}`, sw = f.d === 1 ? 3 : f.d === 2 ? 1.9 : 1.35;
         use(`l|${d}|${stroke}|${sw}`, () => shape(d, { stroke, strokeWidth: sw, seed: seedOf(n.id, 11), roughness: .5 }), dim);
       }
     }
@@ -2193,7 +2203,7 @@ window.addEventListener("resize", () => { if (step() === "map") applyVP(); });
 if (TEST) window.__mindmapStudio = {
   get map() { return M; }, get store() { return store; }, get selected() { return selected; }, get filter() { return F; },
   get undoDepth() { return undoStack.length; }, get pos() { return pos; }, get inkCount() { return svg.childNodes.length; },
-  get base() { return base; }, tidy, spawnAt, index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
+  get base() { return base; }, tidy, spawnAt, connector, index, find, ops, mutate, undo, redo, render, select, editNode, act, setTask, toggleTask, tick, setStatus, cycleStatus,
   createTag, addTag, tagOps, near, tkey, matches, keepSet, setFilter, quickFilter, allTasks, shownTasks, overdue, fmtDate,
   mapMarkdown, tasksMarkdown, boardMarkdown, parseMarkdown, readAny, fileObj, buildCsv, tasksHtml, boardHtml, exportAs, buildPng, withSketchPng,
   exampleMap, blankMap, newMap, switchTo, importText, openPicker, openDetails, openCtx, openTagManager, renderQC, QC, mergeStores, goToMap,

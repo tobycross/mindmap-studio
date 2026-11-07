@@ -462,6 +462,44 @@ test("Older files with automatic sides open with the same layout, then stay fixe
   eq(m.root.children.map(c => c.side), ["right", "right", "left", "left"]);
 });
 
+/* ---------- 1.2.1: connectors never cross a node's box ---------- */
+// Sample the cubic curve and fail if any point lies inside the parent's or the child's box.
+const bez = (c, t) => { const u = 1 - t; return [0, 1].map(k => u * u * u * c[k] + 3 * u * u * t * c[k + 2] + 3 * u * t * t * c[k + 4] + t * t * t * c[k + 6]); };
+const inside = ([x, y], r) => x > r.x + .5 && x < r.x + r.w - .5 && y > r.y + .5 && y < r.y + r.h - .5;
+const crosses = (q, b) => { const c = A.connector(q, b); for (let i = 1; i < 60; i++) { const p = bez(c, i / 60); if (inside(p, q) || inside(p, b)) return p; } return null; };
+test("A connector never crosses either box, wherever the child sits", () => {
+  const q = { x: 0, y: 0, w: 180, h: 50 };
+  let checked = 0;
+  for (const [w, h] of [[120, 40], [220, 90], [60, 30]]) for (let x = -450; x <= 450; x += 13) for (let y = -320; y <= 320; y += 11) {
+    const b = { x, y, w, h };
+    const hGap = Math.max(b.x - (q.x + q.w), q.x - (b.x + b.w)), vGap = Math.max(b.y - (q.y + q.h), q.y - (b.y + b.h));
+    if (hGap < 0 && vGap < 0) continue;   // the boxes themselves overlap: no line can avoid that
+    const hit = crosses(q, b); checked++;
+    if (hit) throw new Error(`Child ${w}×${h} at (${x}, ${y}) crosses at (${hit.map(Math.round)})`);
+  }
+  ok(checked > 10000, "swept the plane");
+});
+test("A tidy map keeps its side-to-side connectors", () => {
+  fresh(); A.render();
+  for (const [id, f] of A.index().map) if (f.p && A.pos[id]) {
+    const c = A.connector(A.pos[f.p.id], A.pos[id]);
+    ok(c[1] === c[3] && c[5] === c[7], "horizontal ends for " + f.n.text);
+  }
+});
+test("Double-click above, below and beside the centre: connectors stay clear of the boxes", () => {
+  fresh(); A.render(); D.body.classList.add("no-anim");
+  const rr = D.querySelector(".node.root").getBoundingClientRect(), stage = D.getElementById("stage");
+  for (const [x, y] of [[rr.left + rr.width / 2 - 30, rr.top - 45], [rr.left + rr.width / 2 + 20, rr.bottom + 45], [rr.left - 5, rr.top - 60], [rr.right + 5, rr.bottom + 60]]) {
+    stage.dispatchEvent(new W.MouseEvent("dblclick", { clientX: x, clientY: y, bubbles: true }));
+    D.querySelector(".node.editing .txt")?.dispatchEvent(new W.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  }
+  for (const [id, f] of A.index().map) if (f.p && A.pos[id] && A.pos[f.p.id]) {
+    const hit = crosses(A.pos[f.p.id], A.pos[id]);
+    ok(!hit, `line to “${f.n.text || "new branch"}” crosses a box`);
+  }
+  D.body.classList.remove("no-anim");
+});
+
 /* ---------- runner ---------- */
 async function run() {
   const fr = document.getElementById("app");

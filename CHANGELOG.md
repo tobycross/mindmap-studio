@@ -12,6 +12,11 @@ When making a release:
 3. Add an entry here.
 4. Tag the commit.
 
+## 1.2.1 (7 November 2026)
+
+- **Fix: lines into nodes placed above or below their parent.** A branch placed above or below its parent, for example with a double-click near the centre, was joined on the wrong side, and the line cut through its box. Lines now run top to bottom in that case and side to side otherwise, always in the gap between the two boxes. Tidy maps look the same as before.
+- **Tests:** three new tests (46 in all), including a sweep of over 10,000 child positions around a parent that checks no line crosses either box.
+
 ## 1.2 (7 November 2026)
 
 - **Double-click to add a branch.** Double-clicking empty canvas adds a main branch centred on that spot, ready to type. It is slotted among that side's branches by height, so Tidy keeps the order you see.
